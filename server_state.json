@@ -1,0 +1,15 @@
+{
+  "moviesData": [],
+  "settings": {
+    "categories": [
+      "Action",
+      "Sci-Fi",
+      "Web Series",
+      "Live TV"
+    ],
+    "baseUrl": "https://iptv.ifastx.in",
+    "mongoUri": "mongodb+srv://peerzadaarmaan_db_user:iptv12345678@cluster0.fkklstq.mongodb.net/?appName=Cluster0",
+    "mongoDbName": "FileStream",
+    "mongoCollection": "file"
+  }
+}
