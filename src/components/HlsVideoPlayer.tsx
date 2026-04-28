@@ -12,7 +12,6 @@ interface HlsVideoPlayerProps {
 }
 
 export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) {
-  const [useProxy, setUseProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
@@ -24,17 +23,11 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
   }, [onNext]);
 
   const finalUrl = useMemo(() => {
-    const streamUrl = cleanStreamUrl(movie.videoUrl);
-    // Don't proxy HTTPS URLs by default so user sees real URL
-    // unless they fail and we trigger fallback via useProxy.
-    // HTTP URLs must be proxied if we are on HTTPS to avoid Mixed Content blocker.
-    const mustProxy = typeof window !== 'undefined' && window.location.protocol === 'https:' && streamUrl.startsWith('http://');
-    
-    if (useProxy || mustProxy) {
-      return `/proxy?url=${encodeURIComponent(streamUrl)}`;
-    }
-    return streamUrl;
-  }, [movie.videoUrl, useProxy]);
+    // The user explicitly requested to play the direct original URL without proxying ("no edit no mix with m3u URLs")
+    // Note: This may cause mixed content issues if hosted on HTTPS and stream is HTTP,
+    // but we will honor the "direct open actual link" request.
+    return cleanStreamUrl(movie.videoUrl);
+  }, [movie.videoUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -114,21 +107,11 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
            switch(data.type) {
              case Hls.ErrorTypes.NETWORK_ERROR:
                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
-                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
-                 if (!useProxy) {
-                    console.log('Network error detected. CORS or Blocked. Falling back to proxy:', movie.videoUrl);
-                    setUseProxy(true);
-                    return;
-                 }
-               }
-               
-               if (useProxy || 
-                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
                     hls.destroy();
-                    setError("The Live TV stream could not be loaded. It might be offline or returning a Bad Gateway (502) error from the provider.");
+                    setError("The Live TV stream could not be loaded. It might be offline or blocked by your browser's Mixed Content settings if using HTTPS.");
                     fetch('/api/report-channel-error', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
