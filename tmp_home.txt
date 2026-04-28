@@ -95,9 +95,27 @@ export function Home() {
             groups[groupKey] = [];
          }
          
-         // Apply baseUrl override to videoUrl if applicable
-         const cleanedUrl = movie.videoUrl.replace('https://iptv.ifastx.in', baseUrl);
-         groups[groupKey].push({ ...movie, videoUrl: cleanedUrl });
+         // Apply baseUrl and fix mixed content
+         const fixUrl = (url: string) => {
+            if (!url) return url;
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+              return `${baseUrl.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+            }
+            let newUrl = url;
+            if (newUrl.includes('192.168.15.206') || newUrl.includes('iptv.ifastx.in')) {
+                newUrl = newUrl.replace(/http:\/\/[0-9\.]+:[0-9]+/g, baseUrl)
+                               .replace(/https:\/\/iptv\.ifastx\.in/g, baseUrl)
+                               .replace(/http:\/\/iptv\.ifastx\.in:[0-9]+/g, baseUrl);
+            }
+            if (newUrl.startsWith('http://')) {
+                newUrl = newUrl.replace('http://', 'https://');
+            }
+            return newUrl;
+         };
+
+         const cleanedUrl = fixUrl(movie.videoUrl);
+         const cleanedPoster = fixUrl(movie.posterUrl);
+         groups[groupKey].push({ ...movie, videoUrl: cleanedUrl, posterUrl: cleanedPoster });
       });
     });
     return groups;
