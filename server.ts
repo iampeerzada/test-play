@@ -473,7 +473,7 @@ async function startServer() {
        }
     }
 
-    const { data: mongoMovies, total: mongoTotal } = await getMongoData(page, limit, search, tab);
+    let { data: mongoMovies, total: mongoTotal } = await getMongoData(page, limit, search, tab);
     
     // Convert and filter moviesData (custom added via /api/movies POST)
     let filteredCustom = moviesData.filter(m => {
@@ -504,10 +504,13 @@ async function startServer() {
     });
 
     const isAdmin = req.query.admin === 'true';
+    const filterStatus = req.query.filterStatus as string || 'all';
 
     // Filter out hidden channels and tab filter
     let visibleM3uMovies = m3uWithOverrides.filter(m => {
-       if (!isAdmin && channelStatusOverrides[m.id]?.hidden) return false;
+       const isHidden = channelStatusOverrides[m.id]?.hidden;
+       if (!isAdmin && isHidden) return false;
+       if (filterStatus === 'hidden' && !isHidden) return false;
        if (search && !m.title.toLowerCase().includes(search)) return false;
        if (!isAdmin && (tab === 'Movies' || tab === 'OTT')) return false; // M3U is Live TV only
        return true;
@@ -516,6 +519,14 @@ async function startServer() {
     // For admin, we want to inject 'hidden' boolean property.
     if (isAdmin) {
        visibleM3uMovies = visibleM3uMovies.map(m => ({ ...m, hidden: !!channelStatusOverrides[m.id]?.hidden }));
+    }
+    
+    if (filterStatus === 'hidden') {
+       // If filtering by errors, we only show channels with errors (mostly M3U or Live TV)
+       // Let's clear Mongo and Custom for now to just focus on M3U broken links
+       mongoMovies = [];
+       mongoTotal = 0;
+       filteredCustom = [];
     }
     
     const combinedData = [...filteredCustom, ...mongoMovies, ...visibleM3uMovies];

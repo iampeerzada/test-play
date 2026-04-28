@@ -22,6 +22,7 @@ export function Admin() {
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'hidden'>('all');
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -41,7 +42,7 @@ export function Admin() {
     try {
       setIsLoadingMovies(true);
       const [moviesRes, settingsRes] = await Promise.all([
-        fetch(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home`),
+        fetch(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home&filterStatus=${filterStatus}`),
         fetch('/api/settings')
       ]);
       const moviesData = await moviesRes.json();
@@ -70,7 +71,7 @@ export function Admin() {
 
   useEffect(() => {
     fetchData();
-  }, [page, searchTerm]);
+  }, [page, searchTerm, filterStatus]);
 
   const handleUpdateSettings = async (e: FormEvent) => {
     e.preventDefault();
@@ -356,18 +357,31 @@ export function Admin() {
         </section>
 
         <section className="bg-gray-800 p-6 rounded-xl border border-gray-700 overflow-hidden">
-                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <h2 className="text-xl font-bold">Library ({total}) {mongoUri && "- Auto Synced ✨"} {isLoadingMovies && <span className="text-red-500 animate-pulse text-sm ml-2">Loading...</span>}</h2>
-            <input 
-               type="text"
-               placeholder="Search library..."
-               value={searchTerm}
-               onChange={e => {
-                  setSearchTerm(e.target.value);
+            <div className="flex flex-wrap gap-4 w-full md:w-auto">
+              <select
+                value={filterStatus}
+                onChange={e => {
+                  setFilterStatus(e.target.value as 'all' | 'hidden');
                   setPage(1);
-               }}
-               className="bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 w-full md:w-64"
-            />
+                }}
+                className="bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 w-full md:w-auto"
+              >
+                <option value="all">All Content</option>
+                <option value="hidden">Broadcast Errors (Hidden)</option>
+              </select>
+              <input 
+                 type="text"
+                 placeholder="Search library..."
+                 value={searchTerm}
+                 onChange={e => {
+                    setSearchTerm(e.target.value);
+                    setPage(1);
+                 }}
+                 className="bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 w-full md:w-64"
+              />
+            </div>
           </div>
            <div className="overflow-x-auto">
              <table className="w-full text-left text-sm whitespace-nowrap">
