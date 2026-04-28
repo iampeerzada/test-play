@@ -104,7 +104,7 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
       </div>
 
       {/* Video Container */}
-      <div className="w-full max-w-7xl aspect-video rounded-xl overflow-hidden shadow-2xl relative bg-black tv-focus">
+      <div className="w-full h-full md:max-w-7xl md:h-auto md:aspect-video overflow-hidden shadow-2xl relative bg-black tv-focus">
         {error && (
           <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-zinc-900/95 text-white p-6 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mb-4" />

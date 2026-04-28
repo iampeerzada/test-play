@@ -9,14 +9,44 @@ import { Readable } from "stream";
 import cors from "cors";
 import crypto from "crypto";
 
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  resellerId?: string;
+}
+
+interface Transaction {
+  id: string;
+  userId: string;
+  resellerId?: string;
+  planId: string;
+  amount: number;
+  date: number;
+  status: 'success' | 'pending' | 'failed';
+  razorpay_order_id?: string;
+  razorpay_payment_id?: string;
+}
+
 interface User {
   id: string;
   name: string;
   phone: string;
   passwordHash: string;
-  role: 'admin' | 'customer';
+  role: 'admin' | 'customer' | 'reseller';
   createdAt: number;
+  myList?: string[];
+  subscriptionEnd?: number;
+  resellerId?: string;
 }
+
+import Razorpay from 'razorpay';
+
+const razorpay = new Razorpay({
+  key_id: 'rzp_live_RmMPzyo61J8piH',
+  key_secret: 'R7Fe2Qr09r7yiOnUrDA26uku'
+});
 
 export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password + 'ifastx_salt_2025').digest('hex');
@@ -58,6 +88,8 @@ let moviesData: ServerMovie[] = [];
 let movieOverrides: Record<string, Partial<ServerMovie>> = {};
 let usersData: User[] = [];
 let hiddenIndustries: string[] = [];
+let plans: SubscriptionPlan[] = [];
+let transactions: Transaction[] = [];
 
 let settings: ServerSettings = {
   categories: ['Action', 'Sci-Fi', 'Web Series', 'Live TV'],
@@ -232,6 +264,8 @@ async function loadState() {
     if (parsed.movieOverrides) movieOverrides = parsed.movieOverrides;
     if (parsed.usersData) usersData = parsed.usersData;
     if (parsed.hiddenIndustries) hiddenIndustries = parsed.hiddenIndustries;
+    if (parsed.plans) plans = parsed.plans;
+    if (parsed.transactions) transactions = parsed.transactions;
         
     // Bootstrapping default admin user
     const adminPhone = '9595956392';
@@ -267,7 +301,7 @@ async function loadState() {
 
 async function saveState() {
   try {
-    const dataString = JSON.stringify({ moviesData, settings, movieOverrides, channelStatusOverrides, usersData, hiddenIndustries }, null, 2);
+    const dataString = JSON.stringify({ moviesData, settings, movieOverrides, channelStatusOverrides, usersData, hiddenIndustries, plans, transactions }, null, 2);
     await fs.writeFile(STATE_FILE, dataString);
     console.log("State saved to", STATE_FILE);
   } catch (e) {
@@ -430,12 +464,174 @@ async function startServer() {
   });
 
   app.get('/api/admin/users', (req, res) => {
-    // Return all customers
-    const customers = usersData.filter(u => u.role === 'customer').map(u => {
+    const { resellerId } = req.query;
+    let customers = usersData.filter(u => u.role === 'customer');
+    if (resellerId) {
+       customers = customers.filter(u => u.resellerId === resellerId);
+    }
+    
+    const mapped = customers.map(u => {
        const { passwordHash, ...safeUser } = u;
        return safeUser;
     });
-    res.json({ success: true, users: customers });
+    res.json({ success: true, users: mapped });
+  });
+
+  app.post('/api/admin/users', async (req, res) => {
+     const { id, name, phone, password, role, resellerId, subscriptionEnd } = req.body;
+     let user = usersData.find(u => u.id === id);
+     
+     if (user) {
+        if (name) user.name = name;
+        if (phone) user.phone = phone;
+        if (password) user.passwordHash = hashPassword(password);
+        if (role) user.role = role;
+        if (subscriptionEnd !== undefined) user.subscriptionEnd = subscriptionEnd;
+     } else {
+        if (!phone || !password || !name) return res.status(400).json({ error: 'Missing fields' });
+        if (usersData.find(u => u.phone === phone)) return res.status(409).json({ error: 'Phone exists' });
+        
+        user = {
+           id: 'u_' + Date.now(),
+           name,
+           phone,
+           passwordHash: hashPassword(password),
+           role: role || 'customer',
+           createdAt: Date.now(),
+           resellerId,
+           subscriptionEnd
+        };
+        usersData.push(user);
+     }
+     await saveState();
+     const { passwordHash, ...safeUser } = user;
+     res.json({ success: true, user: safeUser });
+  });
+
+  // My List endpoints
+  app.post('/api/my-list', async (req, res) => {
+    const { userId, movieId, action } = req.body;
+    const user = usersData.find(u => u.id === userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    if (!user.myList) user.myList = [];
+    
+    if (action === 'add') {
+      if (!user.myList.includes(movieId)) user.myList.push(movieId);
+    } else if (action === 'remove') {
+      user.myList = user.myList.filter(id => id !== movieId);
+    }
+    
+    await saveState();
+    res.json({ success: true, myList: user.myList });
+  });
+
+  app.get('/api/my-list/:userId', (req, res) => {
+    const user = usersData.find(u => u.id === req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ success: true, myList: user.myList || [] });
+  });
+
+  // Subscription & Razorpay endpoints
+  app.get('/api/plans', (req, res) => {
+    // Optionally filter by reseller ID passed in query
+    const { resellerId } = req.query;
+    let availablePlans = plans.filter(p => p.resellerId === resellerId || !p.resellerId);
+    res.json({ success: true, plans: availablePlans });
+  });
+
+  app.post('/api/razorpay/order', async (req, res) => {
+    try {
+      const { planId, userId } = req.body;
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) return res.status(404).json({ error: 'Plan not found' });
+      
+      const options = {
+        amount: plan.price * 100, // Amount is in currency subunits
+        currency: "INR",
+        receipt: `receipt_plan_${planId}_user_${userId}`
+      };
+      
+      const order = await razorpay.orders.create(options);
+      res.json({ success: true, order });
+    } catch (err) {
+       console.error("Razorpay order error:", err);
+       res.status(500).json({ error: 'Failed to create order' });
+    }
+  });
+
+  app.post('/api/razorpay/verify', async (req, res) => {
+    try {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, planId, userId } = req.body;
+      const user = usersData.find(u => u.id === userId);
+      const plan = plans.find(p => p.id === planId);
+      
+      if (!user || !plan) return res.status(400).json({ error: 'Invalid user or plan' });
+      
+      const text = razorpay_order_id + "|" + razorpay_payment_id;
+      const generated_signature = crypto.createHmac('sha256', 'R7Fe2Qr09r7yiOnUrDA26uku')
+                                      .update(text)
+                                      .digest('hex');
+                                      
+      if (generated_signature === razorpay_signature) {
+         // Payment is successful
+         user.subscriptionEnd = Date.now() + (plan.durationDays * 24 * 60 * 60 * 1000);
+         
+         const newTransaction: Transaction = {
+            id: 'txn_' + Date.now(),
+            userId: user.id,
+            resellerId: user.resellerId || plan.resellerId,
+            planId: plan.id,
+            amount: plan.price,
+            date: Date.now(),
+            status: 'success',
+            razorpay_order_id,
+            razorpay_payment_id
+         };
+         transactions.push(newTransaction);
+         await saveState();
+         
+         // Return updated user (excluding hash)
+         const { passwordHash, ...safeUser } = user;
+         res.json({ success: true, user: safeUser });
+      } else {
+         res.status(400).json({ error: 'Invalid signature' });
+      }
+    } catch (err) {
+       console.error("Razorpay verify error:", err);
+       res.status(500).json({ error: 'Verification failed' });
+    }
+  });
+
+  app.post('/api/admin/plans', async (req, res) => {
+    const { id, name, price, durationDays, resellerId } = req.body;
+    let plan = plans.find(p => p.id === id);
+    if (plan) {
+      if (name) plan.name = name;
+      if (price !== undefined) plan.price = price;
+      if (durationDays !== undefined) plan.durationDays = durationDays;
+      if (resellerId !== undefined) plan.resellerId = resellerId;
+    } else {
+      plan = {
+         id: 'p_' + Date.now(),
+         name,
+         price,
+         durationDays,
+         resellerId
+      };
+      plans.push(plan);
+    }
+    await saveState();
+    res.json({ success: true, plan });
+  });
+
+  app.get('/api/admin/transactions', (req, res) => {
+    const { resellerId } = req.query;
+    let txns = transactions;
+    if (resellerId) {
+       txns = txns.filter(t => t.resellerId === resellerId);
+    }
+    res.json({ success: true, transactions: txns });
   });
 
   // Proxy for resolving CORS issues with M3U playlists and Live TV streams

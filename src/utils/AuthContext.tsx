@@ -5,7 +5,10 @@ export interface User {
   id: string;
   name: string;
   phone: string;
-  role: 'admin' | 'customer';
+  role: 'admin' | 'customer' | 'reseller';
+  myList?: string[];
+  subscriptionEnd?: number;
+  resellerId?: string;
 }
 
 interface AuthContextType {

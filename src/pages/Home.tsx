@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Hero } from '../components/Hero';
 import { MovieRow } from '../components/MovieRow';
@@ -9,8 +10,10 @@ import { InfoPopup } from '../components/InfoPopup';
 import { CustomStreamModal } from '../components/CustomStreamModal';
 import { Movie } from '../data/movies';
 import { buildApiUrl } from '../utils/api';
+import { useAuth } from '../utils/AuthContext';
 
 export function Home() {
+  const { user } = useAuth();
   const [activeMovie, setActiveMovie] = useState<Movie | null>(null);
   const [movies, setMovies] = useState<Movie[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -161,8 +164,19 @@ export function Home() {
     setActiveMovie(null);
   };
 
+  const isLocked = user && user.role === 'customer' && (!user.subscriptionEnd || user.subscriptionEnd < Date.now());
+
   return (
     <div className="min-h-screen bg-[#0f1014] text-white flex flex-col relative overflow-x-hidden">
+      {isLocked && (
+        <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <div className="bg-[#0f1014] border border-red-500/30 p-8 rounded-xl shadow-2xl max-w-lg w-full text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">Subscription Expired</h2>
+            <p className="text-gray-400 mb-8">Please purchase a plan to continue watching your favorite movies and shows.</p>
+            <Link to="/subscription" className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-md w-full inline-block transition">View Plans</Link>
+          </div>
+        </div>
+      )}
       <Navbar 
          activeTab={activeTab} 
          onTabChange={(tab) => setActiveTab(tab as any)} 
@@ -240,7 +254,6 @@ export function Home() {
 
       <footer className="py-8 text-center text-gray-500 text-sm mt-auto border-t border-white/10 flex flex-col items-center gap-2">
         <span>&copy; {new Date().getFullYear()} iFastX IPTV. All rights reserved.</span>
-        <Link to="/login" className="text-gray-600 hover:text-gray-400 cursor-pointer tv-focus rounded px-2 mt-2">Admin Login</Link>
       </footer>
 
       {infoMovie && (

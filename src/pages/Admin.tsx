@@ -4,8 +4,10 @@ import { Trash2, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { buildApiUrl } from '../utils/api';
+import { useAuth } from '../utils/AuthContext';
 
 export function Admin() {
+  const { user } = useAuth();
   const [categories, setCategories] = useState<string[]>([]);
   const [baseUrl, setBaseUrl] = useState('');
   const [mongoUri, setMongoUri] = useState('');
@@ -19,7 +21,9 @@ export function Admin() {
   
   const [movies, setMovies] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'content' | 'customers'>('content');
+  const [plans, setPlans] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'content' | 'customers' | 'plans' | 'revenue'>('customers');
   const [editingMovieId, setEditingMovieId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Movie>>({});
   
@@ -47,20 +51,26 @@ export function Admin() {
   const fetchData = async () => {
     try {
       setIsLoadingMovies(true);
-      const [moviesRes, settingsRes, usersRes] = await Promise.all([
+      const suffix = user?.role === 'reseller' ? `?resellerId=${user.id}` : '';
+      
+      const [moviesRes, settingsRes, usersRes, plansRes, txnsRes] = await Promise.all([
         fetch(buildApiUrl(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home&filterStatus=${filterStatus}`)),
         fetch(buildApiUrl('/api/settings')),
-        fetch(buildApiUrl('/api/admin/users'))
+        fetch(buildApiUrl(`/api/admin/users${suffix}`)),
+        fetch(buildApiUrl(`/api/plans${suffix}`)),
+        fetch(buildApiUrl(`/api/admin/transactions${suffix}`))
       ]);
       const moviesData = await moviesRes.json();
       const settingsData = await settingsRes.json();
       const usersData = await usersRes.json();
+      const plansData = await plansRes.json();
+      const txnsData = await txnsRes.json();
       
       setMovies(moviesData.data || []);
       setTotal(moviesData.total || 0);
-      if (usersData.success) {
-         setCustomers(usersData.users || []);
-      }
+      if (usersData.success) setCustomers(usersData.users || []);
+      if (plansData.success) setPlans(plansData.plans || []);
+      if (txnsData.success) setTransactions(txnsData.transactions || []);
       
       setCategories(settingsData.categories || []);
       setBaseUrl(settingsData.baseUrl || '');
@@ -227,21 +237,50 @@ export function Admin() {
            </Link>
         </div>
 
-        <div className="flex gap-4 border-b border-gray-700 pb-2">
-           <button onClick={() => setActiveTab('content')} className={`font-bold px-4 py-2 ${activeTab === 'content' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Content & Settings</button>
-           <button onClick={() => setActiveTab('customers')} className={`font-bold px-4 py-2 ${activeTab === 'customers' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Customers</button>
+        <div className="flex gap-4 border-b border-gray-700 pb-2 overflow-x-auto no-scrollbar">
+           {user?.role === 'admin' && (
+             <button onClick={() => setActiveTab('content')} className={`font-bold px-4 py-2 whitespace-nowrap ${activeTab === 'content' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Content & Settings</button>
+           )}
+           <button onClick={() => setActiveTab('customers')} className={`font-bold px-4 py-2 whitespace-nowrap ${activeTab === 'customers' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Customers</button>
+           <button onClick={() => setActiveTab('plans')} className={`font-bold px-4 py-2 whitespace-nowrap ${activeTab === 'plans' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Plans</button>
+           <button onClick={() => setActiveTab('revenue')} className={`font-bold px-4 py-2 whitespace-nowrap ${activeTab === 'revenue' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Revenue Overview</button>
         </div>
 
         {activeTab === 'customers' ? (
            <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-             <h2 className="text-xl font-bold mb-6">Registered Customers</h2>
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Registered Customers</h2>
+                <button onClick={() => {
+                   const name = prompt('Customer Name:');
+                   if (!name) return;
+                   const phone = prompt('Customer Phone:');
+                   if (!phone) return;
+                   const password = prompt('Customer Password:');
+                   if (!password) return;
+                   
+                   fetch(buildApiUrl('/api/admin/users'), {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({ name, phone, password, role: 'customer', resellerId: user?.role === 'reseller' ? user.id : undefined })
+                   }).then(res => res.json()).then(data => {
+                      if (data.success) {
+                         alert('Customer created!');
+                         fetchData();
+                      } else {
+                         alert(data.error || 'Failed');
+                      }
+                   });
+                }} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Customer</button>
+             </div>
              <div className="overflow-x-auto">
                 <table className="w-full text-left">
                    <thead>
-                      <tr className="border-b border-gray-700">
+                      <tr className="border-b border-gray-700 text-sm text-gray-400">
                          <th className="p-3">Name</th>
                          <th className="p-3">Phone</th>
+                         <th className="p-3">Subscription End</th>
                          <th className="p-3">Joined Date</th>
+                         <th className="p-3">Actions</th>
                       </tr>
                    </thead>
                    <tbody>
@@ -249,11 +288,110 @@ export function Admin() {
                          <tr key={c.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
                             <td className="p-3 font-medium">{c.name}</td>
                             <td className="p-3">{c.phone}</td>
+                            <td className="p-3">
+                               {c.subscriptionEnd ? new Date(c.subscriptionEnd).toLocaleDateString() : 'Inactive'}
+                            </td>
                             <td className="p-3">{new Date(c.createdAt).toLocaleDateString()}</td>
+                            <td className="p-3">
+                               <button onClick={() => {
+                                  const newPass = prompt('Enter new password for this customer:');
+                                  if (newPass) {
+                                     fetch(buildApiUrl('/api/admin/users'), {
+                                        method: 'POST',
+                                        headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify({ id: c.id, password: newPass })
+                                     }).then(() => { alert('Password updated!'); fetchData(); });
+                                  }
+                               }} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Change Pass</button>
+                            </td>
                          </tr>
                       ))}
                       {customers.length === 0 && (
-                         <tr><td colSpan={3} className="p-4 text-center text-gray-400">No customers found.</td></tr>
+                         <tr><td colSpan={5} className="p-4 text-center text-gray-400">No customers found.</td></tr>
+                      )}
+                   </tbody>
+                </table>
+             </div>
+           </section>
+        ) : activeTab === 'plans' ? (
+           <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Subscription Plans</h2>
+                <button onClick={() => {
+                   const name = prompt('Plan Name:');
+                   if (!name) return;
+                   const priceStr = prompt('Price (in ₹):');
+                   if (!priceStr) return;
+                   const durationStr = prompt('Duration (in days):');
+                   if (!durationStr) return;
+                   
+                   fetch(buildApiUrl('/api/admin/plans'), {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({ name, price: parseInt(priceStr), durationDays: parseInt(durationStr), resellerId: user?.role === 'reseller' ? user.id : undefined })
+                   }).then(() => fetchData());
+                }} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Plan</button>
+             </div>
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {plans.map(p => (
+                  <div key={p.id} className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+                     <h3 className="text-xl font-bold mb-2">{p.name}</h3>
+                     <div className="text-3xl font-bold text-red-500 mb-4">₹{p.price}</div>
+                     <p className="text-gray-400 mb-4">{p.durationDays} Days</p>
+                     <button onClick={() => {
+                        const newPrice = prompt('New Price (in ₹):', p.price);
+                        if (newPrice) {
+                           fetch(buildApiUrl('/api/admin/plans'), {
+                              method: 'POST',
+                              headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify({ id: p.id, price: parseInt(newPrice) })
+                           }).then(() => fetchData());
+                        }
+                     }} className="text-sm bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded w-full">Edit Price</button>
+                  </div>
+               ))}
+               {plans.length === 0 && <div className="text-gray-400 col-span-3">No plans created yet.</div>}
+             </div>
+           </section>
+        ) : activeTab === 'revenue' ? (
+           <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+             <h2 className="text-xl font-bold mb-6">Revenue Overview</h2>
+             
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+               <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+                 <h3 className="text-gray-400 font-medium mb-2">Total Revenue</h3>
+                 <div className="text-3xl font-bold text-green-500">₹{transactions.filter(t => t.status === 'success').reduce((acc, t) => acc + t.amount, 0)}</div>
+               </div>
+               <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+                 <h3 className="text-gray-400 font-medium mb-2">Total Transactions</h3>
+                 <div className="text-3xl font-bold">{transactions.filter(t => t.status === 'success').length}</div>
+               </div>
+             </div>
+             
+             <h3 className="text-lg font-bold mb-4">Transaction History</h3>
+             <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                   <thead>
+                      <tr className="border-b border-gray-700 text-sm text-gray-400">
+                         <th className="p-3">Order ID</th>
+                         <th className="p-3">Date</th>
+                         <th className="p-3">Amount</th>
+                         <th className="p-3">Status</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      {transactions.slice().reverse().map(t => (
+                         <tr key={t.id} className="border-b border-gray-700/50">
+                            <td className="p-3 font-mono text-xs">{t.razorpay_order_id || t.id}</td>
+                            <td className="p-3">{new Date(t.date).toLocaleString()}</td>
+                            <td className="p-3 font-medium text-green-400">₹{t.amount}</td>
+                            <td className="p-3">
+                               <span className={`px-2 py-1 rounded text-xs font-bold ${t.status === 'success' ? 'bg-green-900/50 text-green-500' : 'bg-red-900/50 text-red-500'}`}>{t.status.toUpperCase()}</span>
+                            </td>
+                         </tr>
+                      ))}
+                      {transactions.length === 0 && (
+                         <tr><td colSpan={4} className="p-4 text-center text-gray-400">No transactions recorded.</td></tr>
                       )}
                    </tbody>
                 </table>

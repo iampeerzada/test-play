@@ -1,6 +1,8 @@
 import { Movie } from '../data/movies';
-import { X, Play } from 'lucide-react';
+import { X, Play, Plus, Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useAuth } from '../utils/AuthContext';
+import { buildApiUrl } from '../utils/api';
 
 interface InfoPopupProps {
   movie: Movie;
@@ -10,16 +12,45 @@ interface InfoPopupProps {
 
 export function InfoPopup({ movie, onClose, onPlay }: InfoPopupProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { user, login } = useAuth();
+  const [isUpdatingList, setIsUpdatingList] = useState(false);
+
+  // Checks if the movie is currently in the user's list
+  const isInList = user?.myList?.includes(movie.id) || false;
 
   useEffect(() => {
-    // start opening animation after brief delay
     const t = setTimeout(() => setIsOpen(true), 10);
     return () => clearTimeout(t);
   }, []);
 
   const handleClose = () => {
     setIsOpen(false);
-    setTimeout(onClose, 300); // Wait for transition
+    setTimeout(onClose, 300);
+  };
+
+  const toggleMyList = async () => {
+    if (!user) {
+      alert("Please login as a customer to add movies to your list.");
+      return;
+    }
+    
+    setIsUpdatingList(true);
+    try {
+      const action = isInList ? 'remove' : 'add';
+      const res = await fetch(buildApiUrl('/api/my-list'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, movieId: movie.id, action })
+      });
+      const data = await res.json();
+      if (data.success) {
+        login({ ...user, myList: data.myList });
+      }
+    } catch(err) {
+      console.error(err);
+      alert("Failed to update list");
+    }
+    setIsUpdatingList(false);
   };
 
   return (
@@ -83,10 +114,28 @@ export function InfoPopup({ movie, onClose, onPlay }: InfoPopupProps) {
           
           <button
             onClick={() => onPlay(movie)}
-            className="flex items-center justify-center gap-2 bg-white text-black px-6 py-3 rounded-md font-bold hover:bg-white/90 transition-colors w-full focus:ring-4 focus:ring-white/50 mb-4"
+            className="flex items-center justify-center gap-2 bg-white text-black px-6 py-3 rounded-md font-bold hover:bg-white/90 transition-colors w-full focus:ring-4 focus:ring-white/50 mb-3"
           >
             <Play className="w-5 h-5 fill-current" />
             <span>Play Now</span>
+          </button>
+          
+          <button
+            onClick={toggleMyList}
+            disabled={isUpdatingList}
+            className="flex items-center justify-center gap-2 bg-gray-800 text-white px-6 py-3 rounded-md font-bold hover:bg-gray-700 transition-colors w-full focus:ring-4 focus:ring-gray-600 border border-gray-700 disabled:opacity-50"
+          >
+            {isInList ? (
+              <>
+                <Check className="w-5 h-5 text-green-500" />
+                <span>Added to My List</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-5 h-5 text-white" />
+                <span>Add to My List</span>
+              </>
+            )}
           </button>
         </div>
       </div>
