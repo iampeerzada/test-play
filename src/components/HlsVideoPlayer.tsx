@@ -113,17 +113,24 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
          if (data.fatal) {
            switch(data.type) {
              case Hls.ErrorTypes.NETWORK_ERROR:
-               if (!useProxy && finalUrl.startsWith('http://') === false && finalUrl.startsWith('https://')) {
-                  console.log('Network error detected. CORS or Blocked. Falling back to proxy proxy:', movie.videoUrl);
-                  setUseProxy(true);
-                  return;
+               if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
+                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
+                 if (!useProxy) {
+                    console.log('Network error detected. CORS or Blocked. Falling back to proxy:', movie.videoUrl);
+                    setUseProxy(true);
+                    return;
+                 } else {
+                    hls.destroy();
+                    setError("The Live TV stream could not be loaded. It might be offline or returning a Bad Gateway (502) error from the provider.");
+                    fetch('/api/report-channel-error', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ videoId: movie.id })
+                    });
+                    return;
+                 }
                }
                hls.startLoad();
-               fetch('/api/report-channel-error', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ videoId: movie.id })
-               });
                break;
              case Hls.ErrorTypes.MEDIA_ERROR:
                hls.recoverMediaError();

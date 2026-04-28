@@ -521,15 +521,22 @@ async function startServer() {
        visibleM3uMovies = visibleM3uMovies.map(m => ({ ...m, hidden: !!channelStatusOverrides[m.id]?.hidden }));
     }
     
+    let mongoMoviesList = mongoMovies;
+    if (!isAdmin) {
+       mongoMoviesList = mongoMoviesList.filter(m => !channelStatusOverrides[m.id]?.hidden);
+       filteredCustom = filteredCustom.filter(m => !channelStatusOverrides[m.id]?.hidden);
+    } else {
+       mongoMoviesList = mongoMoviesList.map(m => ({ ...m, hidden: !!channelStatusOverrides[m.id]?.hidden }));
+       filteredCustom = filteredCustom.map(m => ({ ...m, hidden: !!channelStatusOverrides[m.id]?.hidden }));
+    }
+
     if (filterStatus === 'hidden') {
-       // If filtering by errors, we only show channels with errors (mostly M3U or Live TV)
-       // Let's clear Mongo and Custom for now to just focus on M3U broken links
-       mongoMovies = [];
-       mongoTotal = 0;
-       filteredCustom = [];
+       // Only show hidden content from both MongoDB, Custom, and M3U
+       mongoMoviesList = mongoMoviesList.filter(m => !!channelStatusOverrides[m.id]?.hidden);
+       filteredCustom = filteredCustom.filter(m => !!channelStatusOverrides[m.id]?.hidden);
     }
     
-    const combinedData = [...filteredCustom, ...mongoMovies, ...visibleM3uMovies];
+    const combinedData = [...filteredCustom, ...mongoMoviesList, ...visibleM3uMovies];
     
     // Note: Since M3U runs to tens of thousands, we also need to slice it if it gets too large, 
     // but we'll trust mongo pagination plus small custom data for now.
@@ -779,15 +786,31 @@ async function startServer() {
     
     console.log(`Auto-checking ${hiddenIds.length} hidden channels for recovery...`);
     for (const id of hiddenIds) {
-      const channel = cachedM3uMovies.find(c => c.id === id);
+      let channel = cachedM3uMovies.find(c => c.id === id);
+      if (!channel) channel = moviesData.find(c => c.id === id);
+      if (!channel && mongoClient) {
+         try {
+           if (id.length === 24) {
+             const db = mongoClient.db(settings.mongoDbName);
+             const collection = db.collection(settings.mongoCollection);
+             const doc = await collection.findOne({ _id: new ObjectId(id) });
+             if (doc) channel = documentToMovie({ ...doc, id: doc._id.toString() });
+           }
+         } catch(e) {}
+      }
+
       if (channel) {
         try {
-          // Send a quick HEAD request to see if it responds without timeout
+          // Send a GET request with Range header to test if the stream replies without a 502/timeout
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 sec timeout
-          const response = await fetch(channel.videoUrl, { method: 'HEAD', signal: controller.signal });
+          const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+          const response = await fetch(channel.videoUrl, { 
+             method: 'GET', 
+             headers: { 'Range': 'bytes=0-1000' },
+             signal: controller.signal 
+          });
           clearTimeout(timeoutId);
-          if (response.ok) {
+          if (response.ok || response.status === 206) {
             console.log(`Channel ${id} recovered! Making it visible again.`);
             channelStatusOverrides[id] = { hidden: false };
           }
