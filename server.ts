@@ -7,9 +7,6 @@ import { MongoClient, ObjectId } from "mongodb";
 import fs from "fs/promises";
 import { Readable } from "stream";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 interface ServerMovie {
   id: string;
   title: string;
@@ -230,8 +227,8 @@ async function saveState() {
 let mongoClient: MongoClient | null = null;
 let mongoLastError: string | null = null;
 
-async function getMongoData(): Promise<ServerMovie[]> {
-  if (!settings.mongoUri) return moviesData;
+async function getMongoData(page: number, limit: number, search: string, tab: string): Promise<{ data: ServerMovie[], total: number }> {
+  if (!settings.mongoUri) return { data: [], total: 0 };
   
   try {
     if (!mongoClient) {
@@ -241,11 +238,54 @@ async function getMongoData(): Promise<ServerMovie[]> {
     const db = mongoClient.db(settings.mongoDbName);
     const collection = db.collection(settings.mongoCollection);
     
-    // Fetch last 100 files
-    const files = await collection.find({}).sort({ _id: -1 }).limit(100).toArray();
-console.log("Fetched " + files.length + " files from MongoDB.");
-console.log("First file:", files[0]);
-    console.log();
+    let match: any = {};
+    if (search) {
+      match['$or'] = [
+        { title: { $regex: search, $options: 'i' } },
+        { file_name: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    if (tab === 'Movies') {
+      match['$and'] = match['$and'] || [];
+      match['$and'].push({
+        $or: [
+          { type: 'Movie' },
+          { $and: [
+             { type: { $ne: 'Web Series' } },
+             { type: { $ne: 'Live TV' } },
+             { type: { $ne: 'Tv Show' } },
+             { category: { $ne: 'Web Series' } },
+             { category: { $ne: 'Live TV' } },
+             { isLive: { $ne: true } }
+          ]}
+        ]
+      });
+    } else if (tab === 'OTT') {
+      match['$and'] = match['$and'] || [];
+      match['$and'].push({
+        $or: [
+          { type: 'Web Series' },
+          { category: 'Web Series' },
+          { type: 'Tv Show' }
+        ]
+      });
+    } else if (tab === 'Live TV') {
+      match['$and'] = match['$and'] || [];
+      match['$and'].push({
+        $or: [
+          { type: 'Live TV' },
+          { category: 'Live TV' },
+          { isLive: true }
+        ]
+      });
+    }
+
+    const skip = (page - 1) * limit;
+    
+    // Fetch total and paginated
+    const total = await collection.countDocuments(match);
+    const files = await collection.find(match).sort({ _id: -1 }).skip(skip).limit(limit).toArray();
     
     // Map to ServerMovie
     const mapped = files.map(file => {
@@ -276,11 +316,11 @@ console.log("First file:", files[0]);
     });
 
     mongoLastError = null;
-    return [...mapped, ...moviesData];
+    return { data: mapped, total };
   } catch (error) {
     console.error("MongoDB fetch error:", error);
     mongoLastError = (error as Error).message;
-    return moviesData; // fallback
+    return { data: [], total: 0 };
   }
 }
 
@@ -412,6 +452,11 @@ async function startServer() {
 
   // 1. Fetch current movies
   app.get("/api/movies", async (req, res) => {
+    const page = parseInt(req.query.page as string || "1");
+    const limit = parseInt(req.query.limit as string || "50");
+    const search = (req.query.search as string || "").toLowerCase();
+    const tab = req.query.tab as string || "Home";
+
     let m3uMovies = cachedM3uMovies;
     if (Date.now() - lastM3uFetchTime > 1000 * 60 * 5) { // 5 min cache
        if (settings.m3uPlaylistUrls) {
@@ -428,11 +473,21 @@ async function startServer() {
        }
     }
 
-    const data = await getMongoData();
-    // "ensure in home live tv page its show only m3u video data as per playlist dont show url"
-    // So if there are M3U playlists configured, filter out other 'Live TV' data
-    let filteredData = data;
+    const { data: mongoMovies, total: mongoTotal } = await getMongoData(page, limit, search, tab);
     
+    // Convert and filter moviesData (custom added via /api/movies POST)
+    let filteredCustom = moviesData.filter(m => {
+       if (search && !m.title.toLowerCase().includes(search)) return false;
+       if (tab === 'Movies') {
+          return m.type === 'Movie' || (!m.isLive && m.type !== 'Live TV' && m.category !== 'Live TV' && m.category !== 'Web Series' && m.type !== 'Web Series');
+       } else if (tab === 'OTT') {
+          return m.type === 'Web Series' || m.category === 'Web Series' || m.type === 'Tv Show';
+       } else if (tab === 'Live TV') {
+          return m.type === 'Live TV' || m.category === 'Live TV' || m.isLive;
+       }
+       return true;
+    });
+
     // Map overrides to M3U movies too
     const m3uWithOverrides = m3uMovies.map(m => {
        const override = movieOverrides[m.id];
@@ -448,10 +503,51 @@ async function startServer() {
        return m;
     });
 
-    // Filter out hidden channels
-    const visibleM3uMovies = m3uWithOverrides.filter(m => !channelStatusOverrides[m.id]?.hidden);
+    const isAdmin = req.query.admin === 'true';
+
+    // Filter out hidden channels and tab filter
+    let visibleM3uMovies = m3uWithOverrides.filter(m => {
+       if (!isAdmin && channelStatusOverrides[m.id]?.hidden) return false;
+       if (search && !m.title.toLowerCase().includes(search)) return false;
+       if (!isAdmin && (tab === 'Movies' || tab === 'OTT')) return false; // M3U is Live TV only
+       return true;
+    });
     
-    res.json([...filteredData, ...visibleM3uMovies]);
+    // For admin, we want to inject 'hidden' boolean property.
+    if (isAdmin) {
+       visibleM3uMovies = visibleM3uMovies.map(m => ({ ...m, hidden: !!channelStatusOverrides[m.id]?.hidden }));
+    }
+    
+    const combinedData = [...filteredCustom, ...mongoMovies, ...visibleM3uMovies];
+    
+    // Note: Since M3U runs to tens of thousands, we also need to slice it if it gets too large, 
+    // but we'll trust mongo pagination plus small custom data for now.
+    // If combined is huge, let's paginate the combined list natively.
+    let paginated = combinedData;
+    let paginatedTotal = mongoTotal + filteredCustom.length + visibleM3uMovies.length;
+    
+    // We already sliced Mongo, but M3U and Custom aren't sliced per page yet.
+    if (limit > 0) {
+        const offset = (page - 1) * limit;
+        if (mongoMovies.length > 0) {
+           // We are displaying paginated Mongo results. For M3U & Custom, to prevent overflow, we only add them on page 1, or offset them too.
+           // Simplest: just strict slice the entire combined data.
+           // Since mongoMovies is already sliced, this logic is tricky. 
+           // Let's just slice the M3U and Custom, and combine.
+           const m3uAndCustom = [...filteredCustom, ...visibleM3uMovies];
+           const paginatedM3uAndCustom = m3uAndCustom.slice(offset, offset + limit);
+           paginated = [...mongoMovies, ...paginatedM3uAndCustom].slice(0, limit);
+        } else {
+           paginated = combinedData.slice(offset, offset + limit);
+        }
+    }
+    
+    res.json({
+        data: paginated,
+        total: paginatedTotal,
+        page,
+        limit
+    });
   });
 
   // 2. Fetch Settings

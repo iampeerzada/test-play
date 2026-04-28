@@ -91,8 +91,8 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
 
       {/* Video Container */}
       <div className="w-full max-w-7xl aspect-video rounded-xl overflow-hidden shadow-2xl relative bg-black tv-focus">
-        {error ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 text-white p-6 text-center">
+        {error && (
+          <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-zinc-900/95 text-white p-6 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
             <h3 className="text-xl font-bold mb-2">Stream Error</h3>
             <p className="text-zinc-400 mb-6 max-w-md">
@@ -109,28 +109,29 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
                )}
             </div>
           </div>
-        ) : (
-          <video 
-            ref={videoRef} 
-            className="w-full h-full object-contain plyr-react"
-            playsInline
-            controls
-            autoPlay
-            onError={(e) => {
-               console.error("Video element error:", e);
-               setError("The stream could not be loaded. It might be offline or returning a Bad Gateway (502) error from the provider.");
-               if (movie.id) {
-                 fetch('/api/report-channel-error', {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({ videoId: movie.id })
-                 }).catch(console.error);
-               }
-            }}
-          >
-            <source src={finalUrl} type="video/mp4" />
-          </video>
         )}
+        <div style={{ display: error ? 'none' : 'block', width: '100%', height: '100%' }}>
+           <video 
+             ref={videoRef} 
+             className="w-full h-full object-contain plyr-react"
+             playsInline
+             controls
+             autoPlay
+             onError={(e) => {
+                console.error("Video element error:", e);
+                setError("The stream could not be loaded. It might be offline or returning a Bad Gateway (502) / Partial Content (206) error from the provider.");
+                if (movie.id) {
+                  fetch('/api/report-channel-error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ videoId: movie.id })
+                  }).catch(console.error);
+                }
+             }}
+           >
+             <source src={finalUrl} type="video/mp4" />
+           </video>
+        </div>
       </div>
     </div>
   );

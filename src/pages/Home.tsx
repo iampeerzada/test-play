@@ -17,59 +17,54 @@ export function Home() {
   const [baseUrl, setBaseUrl] = useState('https://iptv.ifastx.in');
   const [showCustomStream, setShowCustomStream] = useState(false);
   const [activeTab, setActiveTab] = useState<'Home' | 'Movies' | 'OTT' | 'Live TV'>('Home');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Reset page when tab or search changes
+  useEffect(() => {
+    setMovies([]);
+    setPage(1);
+    setHasMore(true);
+  }, [activeTab, searchQuery]);
 
   useEffect(() => {
     const fetchData = async () => {
-      setIsLoading(true);
+      if (page === 1) setIsLoading(true);
+      else setIsLoadingMore(true);
+      
       try {
         const [moviesRes, settingsRes] = await Promise.all([
-          fetch('/api/movies'),
+          fetch(`/api/movies?page=${page}&limit=50&tab=${encodeURIComponent(activeTab)}&search=${encodeURIComponent(searchQuery)}`),
           fetch('/api/settings')
         ]);
         if (!moviesRes.ok || !settingsRes.ok) {
            throw new Error('Failed to fetch data from server');
         }
-        const moviesData = await moviesRes.json();
+        const responseData = await moviesRes.json();
+        const fetchedMovies = responseData.data || [];
+        const total = responseData.total || 0;
         const settingsData = await settingsRes.json();
-        setMovies(moviesData);
+        
+        setMovies(prev => page === 1 ? fetchedMovies : [...prev, ...fetchedMovies]);
+        setHasMore(page * 50 < total);
         setBaseUrl(settingsData.baseUrl);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
         setIsLoading(false);
+        setIsLoadingMore(false);
       }
     };
     fetchData();
-  }, []);
+  }, [page, activeTab, searchQuery]);
 
   const categorizedMovies = useMemo<Record<string, Movie[]>>(() => {
     const groups: Record<string, Movie[]> = {};
     
-    // First, filter by tab
-    let tabFiltered = movies;
-    if (activeTab === 'Movies') {
-       tabFiltered = movies.filter(m => m.type === 'Movie' || (!m.isLive && m.type !== 'Live TV' && m.category !== 'Live TV' && m.category !== 'Web Series' && m.type !== 'Web Series'));
-    } else if (activeTab === 'OTT') {
-       tabFiltered = movies.filter(m => m.type === 'Web Series' || m.category === 'Web Series' || m.type === 'Tv Show');
-    } else if (activeTab === 'Live TV') {
-       tabFiltered = movies.filter(m => m.type === 'Live TV' || m.category === 'Live TV' || m.isLive);
-    } else if (activeTab === 'Home') {
-       // Home tab might just show everything, or a mix of Web Series & Movies
-       // For now, let's keep all
-       tabFiltered = movies;
-    }
-
-    // Then text search filter
-    const searchFiltered = tabFiltered.filter(m => {
-       const term = searchQuery.toLowerCase();
-       if (!term) return true;
-       return (
-          m.title.toLowerCase().includes(term) ||
-          (m.category && m.category.toLowerCase().includes(term)) ||
-          (m.industry && m.industry.toLowerCase().includes(term)) ||
-          (m.genre && m.genre.some(g => g.toLowerCase().includes(term)))
-       );
-    });
+    // We don't need to filter by tab or search locally anymore since the server does it, 
+    // but just in case, we'll keep the grouping logic.
+    const searchFiltered = movies;
 
     searchFiltered.forEach(movie => {
       let groupKeys: string[] = [];
@@ -178,6 +173,18 @@ export function Home() {
               />
             </div>
           ))}
+
+          {hasMore && (
+            <div className="text-center pb-20 pt-10">
+               <button 
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={isLoadingMore}
+                  className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-full font-semibold transition disabled:opacity-50"
+               >
+                 {isLoadingMore ? 'Loading...' : 'Load More'}
+               </button>
+            </div>
+          )}
         </div>
       </main>
 

@@ -23,6 +23,11 @@ export function Admin() {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [isLoadingMovies, setIsLoadingMovies] = useState(false);
+
   // New movie state
   const [newMovie, setNewMovie] = useState<Partial<Movie>>({
     category: '',
@@ -34,18 +39,16 @@ export function Admin() {
 
   const fetchData = async () => {
     try {
-      const [moviesRes, settingsRes, channelsRes] = await Promise.all([
-        fetch('/api/movies'),
-        fetch('/api/settings'),
-        fetch('/api/admin/channels')
+      setIsLoadingMovies(true);
+      const [moviesRes, settingsRes] = await Promise.all([
+        fetch(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home`),
+        fetch('/api/settings')
       ]);
       const moviesData = await moviesRes.json();
       const settingsData = await settingsRes.json();
-      const channelsData = await channelsRes.json();
       
-      // Combine normal movies with admin channels (which includes hidden status)
-      const combined = [...moviesData.filter((m: any) => !m.id.startsWith('m3u_')), ...channelsData];
-      setMovies(combined);
+      setMovies(moviesData.data || []);
+      setTotal(moviesData.total || 0);
       
       setCategories(settingsData.categories || []);
       setBaseUrl(settingsData.baseUrl || '');
@@ -60,12 +63,14 @@ export function Admin() {
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
+    } finally {
+      setIsLoadingMovies(false);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [page, searchTerm]);
 
   const handleUpdateSettings = async (e: FormEvent) => {
     e.preventDefault();
@@ -180,10 +185,8 @@ export function Admin() {
     }
   };
 
-  const filteredMovies = movies.filter(m => 
-    m.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    m.category?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Debounced search logic could be added here, but for now we just load when searchTerm changes.
+  const filteredMovies = movies;
 
   return (
     <div className="min-h-screen bg-[#0f1014] text-white p-6 md:p-12">
@@ -354,12 +357,15 @@ export function Admin() {
 
         <section className="bg-gray-800 p-6 rounded-xl border border-gray-700 overflow-hidden">
                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold">Library ({filteredMovies.length}) {mongoUri && "- Auto Synced ✨"}</h2>
+            <h2 className="text-xl font-bold">Library ({total}) {mongoUri && "- Auto Synced ✨"} {isLoadingMovies && <span className="text-red-500 animate-pulse text-sm ml-2">Loading...</span>}</h2>
             <input 
                type="text"
                placeholder="Search library..."
                value={searchTerm}
-               onChange={e => setSearchTerm(e.target.value)}
+               onChange={e => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+               }}
                className="bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 w-full md:w-64"
             />
           </div>
@@ -506,6 +512,27 @@ export function Admin() {
                </tbody>
              </table>
              {filteredMovies.length === 0 && <p className="text-center py-8 text-gray-400">No movies found.</p>}
+             
+             {/* Pagination Controls */}
+             <div className="bg-gray-900 p-4 border border-x-0 border-b-0 border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <button 
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1 || isLoadingMovies}
+                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm disabled:opacity-50 transition font-medium"
+                >
+                  Previous
+                </button>
+                <div className="text-sm text-gray-400 font-medium">
+                   Page {page} of {Math.max(1, Math.ceil(total / 50))}
+                </div>
+                <button 
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={(page * 50) >= total || isLoadingMovies}
+                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm disabled:opacity-50 transition font-medium"
+                >
+                  Next
+                </button>
+             </div>
            </div>
         </section>
       </div>

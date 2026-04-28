@@ -173,8 +173,8 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
          </button>
       </div>
       <div className="w-full max-w-7xl aspect-video rounded-xl overflow-hidden shadow-2xl relative bg-black tv-focus">
-        {error ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 text-white p-6 text-center">
+        {error && (
+          <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-zinc-900/95 text-white p-6 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
             <h3 className="text-xl font-bold mb-2">Stream Error</h3>
             <p className="text-zinc-400 mb-6 max-w-md">
@@ -191,7 +191,8 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
                )}
             </div>
           </div>
-        ) : (
+        )}
+        <div style={{ display: error ? 'none' : 'block', width: '100%', height: '100%' }}>
           <video 
             ref={videoRef} 
             className="w-full h-full object-contain plyr-react"
@@ -203,7 +204,7 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
                setError("The stream could not be loaded because it is offline.");
             }}
           />
-        )}
+        </div>
       </div>
     </div>
   );
