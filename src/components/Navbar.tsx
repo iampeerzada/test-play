@@ -67,7 +67,11 @@ export function Navbar({ activeTab, onTabChange, onSearch, onCustomStream }: Nav
                 type="text"
                 placeholder="Search..."
                 value={searchQuery}
-                onBlur={() => !searchQuery && setShowSearch(false)}
+                onBlur={(e) => {
+                  if (!e.target.value && !searchQuery) {
+                    setShowSearch(false);
+                  }
+                }}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   onSearch(e.target.value);

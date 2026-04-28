@@ -365,6 +365,11 @@ async function startServer() {
 
        // To avoid abort/timeout issues on big streams
        const controller = new AbortController();
+       
+       req.on('close', () => {
+         controller.abort();
+       });
+       
        const timeout = setTimeout(() => controller.abort(), 86400000); // 24 hours
        fetchOptions.signal = controller.signal;
 
@@ -424,15 +429,24 @@ async function startServer() {
           
           return res.send(rewrittenText);
        } else {
-          // Just puree proxy it (like TS files)
+          // Just puree proxy it (like TS files or MP4s)
           if (!response.body) {
              return res.status(200).send();
           }
           
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          res.setHeader('Content-Length', buffer.length);
-          return res.send(buffer);
+          response.headers.forEach((value, key) => {
+             if (!['content-encoding', 'transfer-encoding', 'connection'].includes(key.toLowerCase())) {
+                 res.setHeader(key, value);
+             }
+          });
+          
+          res.status(response.status);
+          const readable = Readable.fromWeb(response.body as any);
+          readable.pipe(res);
+          
+          readable.on('error', () => {
+             res.end();
+          });
        }
     } catch (err: any) {
        if (err.name === 'AbortError') {

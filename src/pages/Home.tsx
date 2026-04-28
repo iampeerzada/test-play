@@ -30,6 +30,8 @@ export function Home() {
   }, [activeTab, searchQuery]);
 
   useEffect(() => {
+    let active = true;
+    
     const fetchData = async () => {
       if (page === 1) setIsLoading(true);
       else setIsLoadingMore(true);
@@ -43,21 +45,34 @@ export function Home() {
            throw new Error('Failed to fetch data from server');
         }
         const responseData = await moviesRes.json();
-        const fetchedMovies = responseData.data || [];
-        const total = responseData.total || 0;
         const settingsData = await settingsRes.json();
         
-        setMovies(prev => page === 1 ? fetchedMovies : [...prev, ...fetchedMovies]);
-        setHasMore(page * 50 < total);
-        setBaseUrl(settingsData.baseUrl);
+        if (active) {
+          const fetchedMovies = responseData.data || [];
+          const total = responseData.total || 0;
+          setMovies(prev => page === 1 ? fetchedMovies : [...prev, ...fetchedMovies]);
+          setHasMore(page * 50 < total);
+          setBaseUrl(settingsData.baseUrl);
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (active) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     };
-    fetchData();
+    
+    // Add small debounce for typing
+    const timeoutId = setTimeout(() => {
+       fetchData();
+    }, 300);
+    
+    return () => {
+       active = false;
+       clearTimeout(timeoutId);
+    };
   }, [page, activeTab, searchQuery]);
 
   const categorizedMovies = useMemo<Record<string, Movie[]>>(() => {
@@ -102,9 +117,6 @@ export function Home() {
                 newUrl = newUrl.replace(/http:\/\/[0-9\.]+:[0-9]+/g, baseUrl)
                                .replace(/https:\/\/iptv\.ifastx\.in/g, baseUrl)
                                .replace(/http:\/\/iptv\.ifastx\.in:[0-9]+/g, baseUrl);
-            }
-            if (newUrl.startsWith('http://')) {
-                newUrl = newUrl.replace('http://', 'https://');
             }
             return newUrl;
          };
@@ -187,7 +199,6 @@ export function Home() {
                           if (newUrl.includes('192.168.15.206') || newUrl.includes('iptv.ifastx.in')) {
                               newUrl = newUrl.replace(/http:\/\/[0-9\.]+:[0-9]+/g, baseUrl).replace(/https:\/\/iptv\.ifastx\.in/g, baseUrl).replace(/http:\/\/iptv\.ifastx\.in:[0-9]+/g, baseUrl);
                           }
-                          if (newUrl.startsWith('http://')) newUrl = newUrl.replace('http://', 'https://');
                           return newUrl;
                         };
                         const cleanedMovie = { ...movie, videoUrl: fixUrl(movie.videoUrl), posterUrl: fixUrl(movie.posterUrl) };
