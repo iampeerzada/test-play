@@ -7,6 +7,20 @@ import { MongoClient, ObjectId } from "mongodb";
 import fs from "fs/promises";
 import { Readable } from "stream";
 import cors from "cors";
+import crypto from "crypto";
+
+interface User {
+  id: string;
+  name: string;
+  phone: string;
+  passwordHash: string;
+  role: 'admin' | 'customer';
+  createdAt: number;
+}
+
+export function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password + 'ifastx_salt_2025').digest('hex');
+}
 
 interface ServerMovie {
   id: string;
@@ -42,6 +56,8 @@ interface ServerSettings {
 // In-memory state - Starting empty to remove mock data
 let moviesData: ServerMovie[] = [];
 let movieOverrides: Record<string, Partial<ServerMovie>> = {};
+let usersData: User[] = [];
+let hiddenIndustries: string[] = [];
 
 let settings: ServerSettings = {
   categories: ['Action', 'Sci-Fi', 'Web Series', 'Live TV'],
@@ -214,17 +230,44 @@ async function loadState() {
        settings.mongoCollection = 'file';
     }
     if (parsed.movieOverrides) movieOverrides = parsed.movieOverrides;
-        // 6. Report channel error
-        // 7. Update channel status from admin
-        parsed.channelStatusOverrides && (channelStatusOverrides = parsed.channelStatusOverrides);
+    if (parsed.usersData) usersData = parsed.usersData;
+    if (parsed.hiddenIndustries) hiddenIndustries = parsed.hiddenIndustries;
+        
+    // Bootstrapping default admin user
+    const adminPhone = '9595956392';
+    if (!usersData.find(u => u.phone === adminPhone)) {
+        usersData.push({
+            id: 'u_admin',
+            name: 'Admin',
+            phone: adminPhone,
+            passwordHash: hashPassword('ifastx@2025'),
+            role: 'admin',
+            createdAt: Date.now()
+        });
+    }
+
+    // 6. Report channel error
+    // 7. Update channel status from admin
+    parsed.channelStatusOverrides && (channelStatusOverrides = parsed.channelStatusOverrides);
   } catch (e) {
     // start with defaults if no file
+    const adminPhone = '9595956392';
+    if (!usersData.find(u => u.phone === adminPhone)) {
+        usersData.push({
+            id: 'u_admin',
+            name: 'Admin',
+            phone: adminPhone,
+            passwordHash: hashPassword('ifastx@2025'),
+            role: 'admin',
+            createdAt: Date.now()
+        });
+    }
   }
 }
 
 async function saveState() {
   try {
-    const dataString = JSON.stringify({ moviesData, settings, movieOverrides, channelStatusOverrides }, null, 2);
+    const dataString = JSON.stringify({ moviesData, settings, movieOverrides, channelStatusOverrides, usersData, hiddenIndustries }, null, 2);
     await fs.writeFile(STATE_FILE, dataString);
     console.log("State saved to", STATE_FILE);
   } catch (e) {
@@ -346,6 +389,55 @@ async function startServer() {
 
   // API Routes
   
+  // Auth endpoints
+  app.post('/api/auth/login', (req, res) => {
+    const { phone, password } = req.body;
+    if (!phone || !password) {
+      return res.status(400).json({ error: 'Phone and password are required' });
+    }
+    const hashed = hashPassword(password);
+    const user = usersData.find(u => u.phone === phone && u.passwordHash === hashed);
+    
+    if (user) {
+       // Return user info minus the hash
+       const { passwordHash, ...safeUser } = user;
+       res.json({ success: true, user: safeUser });
+    } else {
+       res.status(401).json({ error: 'Invalid credentials' });
+    }
+  });
+
+  app.post('/api/auth/register', async (req, res) => {
+    const { phone, password, name } = req.body;
+    if (!phone || !password || !name) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+    if (usersData.find(u => u.phone === phone)) {
+      return res.status(409).json({ error: 'Phone number already registered' });
+    }
+    const newUser: User = {
+      id: 'u_' + Date.now().toString(),
+      name,
+      phone,
+      passwordHash: hashPassword(password),
+      role: 'customer',
+      createdAt: Date.now()
+    };
+    usersData.push(newUser);
+    await saveState();
+    const { passwordHash, ...safeUser } = newUser;
+    res.json({ success: true, user: safeUser });
+  });
+
+  app.get('/api/admin/users', (req, res) => {
+    // Return all customers
+    const customers = usersData.filter(u => u.role === 'customer').map(u => {
+       const { passwordHash, ...safeUser } = u;
+       return safeUser;
+    });
+    res.json({ success: true, users: customers });
+  });
+
   // Proxy for resolving CORS issues with M3U playlists and Live TV streams
   app.options("/proxy", (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -561,8 +653,13 @@ async function startServer() {
 
     if (filterStatus === 'hidden') {
        // Only show hidden content from both MongoDB, Custom, and M3U
-       mongoMoviesList = mongoMoviesList.filter(m => !!channelStatusOverrides[m.id]?.hidden);
-       filteredCustom = filteredCustom.filter(m => !!channelStatusOverrides[m.id]?.hidden);
+       mongoMoviesList = mongoMoviesList.filter(m => !!channelStatusOverrides[m.id]?.hidden || hiddenIndustries.includes(m.category || m.industry || ''));
+       filteredCustom = filteredCustom.filter(m => !!channelStatusOverrides[m.id]?.hidden || hiddenIndustries.includes(m.category || m.industry || ''));
+    } else if (!isAdmin) {
+       // Hide hidden industries for frontend requests
+       mongoMoviesList = mongoMoviesList.filter(m => !hiddenIndustries.includes(m.category || m.industry || ''));
+       filteredCustom = filteredCustom.filter(m => !hiddenIndustries.includes(m.category || m.industry || ''));
+       visibleM3uMovies = visibleM3uMovies.filter(m => !hiddenIndustries.includes(m.category || m.industry || ''));
     }
     
     const combinedData = [...filteredCustom, ...mongoMoviesList, ...visibleM3uMovies];
@@ -614,14 +711,15 @@ async function startServer() {
          mongoStatus = "Attempting to Connect (Refresh...)";
       }
     }
-    res.json({ ...settings, mongoStatus });
+    res.json({ ...settings, mongoStatus, hiddenIndustries });
   });
 
   // 3. Update Settings
   app.post("/api/settings", async (req, res) => {
     console.log("Saving settings payload:", req.body);
-    const { categories, m3uPlaylistUrls, m3uSortAZ } = req.body;
+    const { categories, m3uPlaylistUrls, m3uSortAZ, hiddenIndustries: reqHiddenIndustries } = req.body;
     if (categories) settings.categories = categories;
+    if (reqHiddenIndustries) hiddenIndustries = reqHiddenIndustries;
     if (typeof m3uSortAZ === 'boolean') settings.m3uSortAZ = m3uSortAZ;
     if (typeof m3uPlaylistUrls === 'string') {
        settings.m3uPlaylistUrls = m3uPlaylistUrls;

@@ -5,7 +5,14 @@ const config: CapacitorConfig = {
   appName: 'IPTV Streamer',
   webDir: 'dist',
   server: {
-    cleartext: true
+    cleartext: true,
+    androidScheme: 'http',
+    allowNavigation: ['*']
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true
+    }
   }
 };
 

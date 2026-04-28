@@ -5,6 +5,7 @@ import Plyr from 'plyr';
 import { Movie } from '../data/movies';
 import { cleanStreamUrl } from '../utils/stream';
 import { Capacitor } from '@capacitor/core';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { buildApiUrl } from '../utils/api';
 
 interface HlsVideoPlayerProps {
@@ -25,12 +26,23 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
     onNextRef.current = onNext;
   }, [onNext]);
 
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {});
+    }
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        ScreenOrientation.unlock().catch(() => {});
+      }
+    };
+  }, []);
+
   const finalUrl = useMemo(() => {
     const streamUrl = cleanStreamUrl(movie.videoUrl);
     
-    // If running inside native Android via Capacitor, bypass the proxy completely!
-    // Native apps do not have browser Mixed-Content restrictions.
-    if (Capacitor.isNativePlatform()) {
+    // If running inside native Android via Capacitor, bypass the proxy initially.
+    // native apps bypass CORS via CapacitorHttp and don't have mixed-content restrictions.
+    if (Capacitor.isNativePlatform() && !useProxy) {
        return streamUrl;
     }
     
@@ -40,7 +52,7 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
     const mustProxy = typeof window !== 'undefined' && window.location.protocol === 'https:' && streamUrl.startsWith('http://');
     
     if (useProxy || mustProxy) {
-      return `/proxy?url=${encodeURIComponent(streamUrl)}`;
+      return buildApiUrl(`/proxy?url=${encodeURIComponent(streamUrl)}`);
     }
     return streamUrl;
   }, [movie.videoUrl, useProxy]);
@@ -124,24 +136,25 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
              case Hls.ErrorTypes.NETWORK_ERROR:
                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
-                 if (!useProxy) {
+                 if (!useProxy && !Capacitor.isNativePlatform()) {
                     console.log('Network error detected. CORS or Blocked. Falling back to proxy:', movie.videoUrl);
                     setUseProxy(true);
                     return;
                  }
                }
                
-               if (useProxy || 
+               if (useProxy || Capacitor.isNativePlatform() || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
                     hls.destroy();
-                    setError("The Live TV stream could not be loaded. It might be offline or blocked by your browser's Mixed Content settings if using HTTPS.");
+                    const reason = data.response?.code ? `HTTP ${data.response.code}` : data.details;
+                    setError(`Stream Failed [${reason}]. Address: ${movie.videoUrl}`);
                     fetch(buildApiUrl('/api/report-channel-error'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ videoId: movie.id })
+                      body: JSON.stringify({ videoId: movie.id, reason: data.details })
                     }).then(() => {
                        window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                     });
@@ -154,11 +167,11 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
                break;
              default:
                hls.destroy();
-               setError("The Live TV stream could not be loaded because the channel is currently offline or blocking access.");
+               setError(`Stream Failed [${data.details}]. Channel might be offline or blocked.`);
                fetch(buildApiUrl('/api/report-channel-error'), {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ videoId: movie.id })
+                 body: JSON.stringify({ videoId: movie.id, reason: data.details })
                }).then(() => {
                   window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                });

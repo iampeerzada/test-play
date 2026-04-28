@@ -1,6 +1,7 @@
-import { Tv, Search, Bell, Menu, Settings, PlaySquare } from 'lucide-react';
+import { Tv, Search, Bell, Menu, Settings, PlaySquare, User as UserIcon, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../utils/AuthContext';
 
 interface NavbarProps {
   activeTab: string;
@@ -13,6 +14,8 @@ export function Navbar({ activeTab, onTabChange, onSearch, onCustomStream }: Nav
   const [isScrolled, setIsScrolled] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -96,9 +99,30 @@ export function Navbar({ activeTab, onTabChange, onSearch, onCustomStream }: Nav
             />
           )}
           <Bell className="w-5 h-5 cursor-pointer hover:text-white transition-colors tv-focus rounded hidden sm:block" tabIndex={0} />
-          <Link to="/admin" className="w-8 h-8 rounded-md bg-gradient-to-br from-red-500 to-red-600 tv-focus cursor-pointer flex items-center justify-center hover:opacity-80 transition-opacity" tabIndex={0} title="Admin Panel">
-             <Settings className="w-4 h-4 text-white" />
-          </Link>
+          {user ? (
+             <div className="flex items-center gap-3 ml-2">
+                <div className="hidden sm:flex items-center gap-2 max-w-[120px]">
+                   <UserIcon className="w-4 h-4 text-gray-400" />
+                   <span className="text-sm font-medium text-gray-300 truncate">{user.name}</span>
+                </div>
+                {user.role === 'admin' && (
+                  <Link to="/admin" className="w-8 h-8 rounded-md bg-gradient-to-br from-red-500 to-red-600 tv-focus cursor-pointer flex items-center justify-center hover:opacity-80 transition-opacity" tabIndex={0} title="Admin Panel">
+                     <Settings className="w-4 h-4 text-white" />
+                  </Link>
+                )}
+                <button
+                   onClick={() => { logout(); navigate('/login'); }}
+                   className="w-8 h-8 rounded-md bg-gray-800 border border-gray-700 tv-focus cursor-pointer flex items-center justify-center hover:bg-gray-700 transition"
+                   title="Logout"
+                >
+                   <LogOut className="w-4 h-4 text-gray-300" />
+                </button>
+             </div>
+          ) : (
+             <Link to="/login" className="ml-2 px-4 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-colors tv-focus">
+                Login
+             </Link>
+          )}
           <Menu className="w-6 h-6 md:hidden cursor-pointer hover:text-white transition-colors tv-focus rounded" tabIndex={0} />
         </div>
       </div>

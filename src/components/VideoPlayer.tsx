@@ -3,6 +3,8 @@ import { X, AlertCircle } from 'lucide-react';
 import Plyr from 'plyr';
 import { Movie } from '../data/movies';
 import { cleanStreamUrl } from '../utils/stream';
+import { Capacitor } from '@capacitor/core';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { buildApiUrl } from '../utils/api';
 
 interface VideoPlayerProps {
@@ -20,6 +22,17 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
   useEffect(() => {
     onNextRef.current = onNext;
   }, [onNext]);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {});
+    }
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        ScreenOrientation.unlock().catch(() => {});
+      }
+    };
+  }, []);
 
   const finalUrl = cleanStreamUrl(movie.videoUrl);
 
@@ -120,12 +133,14 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
              autoPlay
              onError={(e) => {
                 console.error("Video element error:", e);
-                setError("The stream could not be loaded. It might be offline or returning a Bad Gateway (502) / Partial Content (206) error from the provider.");
+                const videoElement = e.target as HTMLVideoElement;
+                const errorDetail = videoElement.error ? `Code: ${videoElement.error.code}, Msg: ${videoElement.error.message}` : 'Unknown';
+                setError(`The stream could not be loaded [${errorDetail}]. It might be offline.`);
                 if (movie.id) {
                   fetch(buildApiUrl('/api/report-channel-error'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ videoId: movie.id })
+                    body: JSON.stringify({ videoId: movie.id, reason: errorDetail })
                   }).then(() => {
                      window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                   }).catch(console.error);

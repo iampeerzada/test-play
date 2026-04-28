@@ -14,9 +14,12 @@ export function Admin() {
   const [mongoStatus, setMongoStatus] = useState('');
   const [m3uPlaylistUrls, setM3uPlaylistUrls] = useState('');
   const [m3uSortAZ, setM3uSortAZ] = useState(false);
+  const [hiddenIndustries, setHiddenIndustries] = useState<string[]>([]);
   const [nativeBackendUrl, setNativeBackendUrl] = useState(() => localStorage.getItem('native_backend_url') || 'https://ais-pre-czsxixhjbz5ued4kd2yx4i-219951265601.asia-southeast1.run.app');
   
   const [movies, setMovies] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'content' | 'customers'>('content');
   const [editingMovieId, setEditingMovieId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Movie>>({});
   
@@ -44,15 +47,20 @@ export function Admin() {
   const fetchData = async () => {
     try {
       setIsLoadingMovies(true);
-      const [moviesRes, settingsRes] = await Promise.all([
+      const [moviesRes, settingsRes, usersRes] = await Promise.all([
         fetch(buildApiUrl(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home&filterStatus=${filterStatus}`)),
-        fetch(buildApiUrl('/api/settings'))
+        fetch(buildApiUrl('/api/settings')),
+        fetch(buildApiUrl('/api/admin/users'))
       ]);
       const moviesData = await moviesRes.json();
       const settingsData = await settingsRes.json();
+      const usersData = await usersRes.json();
       
       setMovies(moviesData.data || []);
       setTotal(moviesData.total || 0);
+      if (usersData.success) {
+         setCustomers(usersData.users || []);
+      }
       
       setCategories(settingsData.categories || []);
       setBaseUrl(settingsData.baseUrl || '');
@@ -62,6 +70,7 @@ export function Admin() {
       setMongoStatus(settingsData.mongoStatus || '');
       setM3uPlaylistUrls(settingsData.m3uPlaylistUrls || '');
       setM3uSortAZ(!!settingsData.m3uSortAZ);
+      setHiddenIndustries(settingsData.hiddenIndustries || []);
       if (settingsData.categories && settingsData.categories.length > 0) {
          setNewMovie(prev => ({ ...prev, category: settingsData.categories[0] }));
       }
@@ -82,13 +91,29 @@ export function Admin() {
       await fetch(buildApiUrl('/api/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categories, baseUrl, mongoUri, mongoDbName, mongoCollection, m3uPlaylistUrls, m3uSortAZ })
+        body: JSON.stringify({ categories, baseUrl, mongoUri, mongoDbName, mongoCollection, m3uPlaylistUrls, m3uSortAZ, hiddenIndustries })
       });
       alert('Settings updated successfully!');
       fetchData(); // reload movies because mongo config might have changed
     } catch (e) {
       alert('Failed to update settings');
     }
+  };
+
+  const handleToggleIndustryHidden = (industry: string) => {
+     let updated = [...hiddenIndustries];
+     if (updated.includes(industry)) {
+        updated = updated.filter(i => i !== industry);
+     } else {
+        updated.push(industry);
+     }
+     setHiddenIndustries(updated);
+     // Immediately save settings to backend
+     fetch(buildApiUrl('/api/settings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories, baseUrl, mongoUri, mongoDbName, mongoCollection, m3uPlaylistUrls, m3uSortAZ, hiddenIndustries: updated })
+      }).then(() => fetchData());
   };
 
   const handleAddCategory = () => {
@@ -193,8 +218,8 @@ export function Admin() {
   const filteredMovies = movies;
 
   return (
-    <div className="min-h-screen bg-[#0f1014] text-white p-6 md:p-12">
-      <div className="max-w-4xl mx-auto space-y-12">
+    <div className="min-h-screen bg-[#0f1014] text-white p-6 md:p-12 pb-32">
+      <div className="max-w-6xl mx-auto space-y-12">
         <div className="flex items-center justify-between">
            <h1 className="text-3xl font-bold">Admin Panel</h1>
            <Link to="/" className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium transition-colors">
@@ -202,6 +227,40 @@ export function Admin() {
            </Link>
         </div>
 
+        <div className="flex gap-4 border-b border-gray-700 pb-2">
+           <button onClick={() => setActiveTab('content')} className={`font-bold px-4 py-2 ${activeTab === 'content' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Content & Settings</button>
+           <button onClick={() => setActiveTab('customers')} className={`font-bold px-4 py-2 ${activeTab === 'customers' ? 'text-red-500 border-b-2 border-red-500' : 'text-gray-400 hover:text-white'}`}>Customers</button>
+        </div>
+
+        {activeTab === 'customers' ? (
+           <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+             <h2 className="text-xl font-bold mb-6">Registered Customers</h2>
+             <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                   <thead>
+                      <tr className="border-b border-gray-700">
+                         <th className="p-3">Name</th>
+                         <th className="p-3">Phone</th>
+                         <th className="p-3">Joined Date</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      {customers.map(c => (
+                         <tr key={c.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                            <td className="p-3 font-medium">{c.name}</td>
+                            <td className="p-3">{c.phone}</td>
+                            <td className="p-3">{new Date(c.createdAt).toLocaleDateString()}</td>
+                         </tr>
+                      ))}
+                      {customers.length === 0 && (
+                         <tr><td colSpan={3} className="p-4 text-center text-gray-400">No customers found.</td></tr>
+                      )}
+                   </tbody>
+                </table>
+             </div>
+           </section>
+        ) : (
+        <>
         <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
           <h2 className="text-xl font-bold mb-6">Global Settings</h2>
           
@@ -294,6 +353,23 @@ export function Admin() {
                     {cat}
                     <button type="button" onClick={() => handleRemoveCategory(cat)} className="hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
                   </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-700">
+              <label className="block text-sm font-medium text-gray-400 mb-2">Industry Visibility</label>
+              <p className="text-xs text-gray-500 mb-3">Click on an industry or category to toggle its visibility in the app.</p>
+              <div className="flex flex-wrap gap-2">
+                {Array.from(new Set(movies.map(m => m.industry || m.category).filter(Boolean))).sort().map(ind => (
+                   <button 
+                      key={ind} 
+                      type="button"
+                      onClick={() => handleToggleIndustryHidden(ind)}
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${hiddenIndustries.includes(ind) ? 'bg-red-900/50 text-red-500 border border-red-900' : 'bg-green-900/50 text-green-400 border border-green-900'}`}
+                   >
+                     {ind} ({hiddenIndustries.includes(ind) ? 'Hidden' : 'Visible'})
+                   </button>
                 ))}
               </div>
             </div>
@@ -536,6 +612,8 @@ export function Admin() {
              </div>
            </div>
         </section>
+        </>
+        )}
       </div>
     </div>
   );

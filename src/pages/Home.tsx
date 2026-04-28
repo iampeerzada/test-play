@@ -238,8 +238,9 @@ export function Home() {
         )}
       </main>
 
-      <footer className="py-8 text-center text-gray-500 text-sm mt-auto border-t border-white/10">
-        &copy; {new Date().getFullYear()} iFastX IPTV. All rights reserved.
+      <footer className="py-8 text-center text-gray-500 text-sm mt-auto border-t border-white/10 flex flex-col items-center gap-2">
+        <span>&copy; {new Date().getFullYear()} iFastX IPTV. All rights reserved.</span>
+        <Link to="/login" className="text-gray-600 hover:text-gray-400 cursor-pointer tv-focus rounded px-2 mt-2">Admin Login</Link>
       </footer>
 
       {infoMovie && (
