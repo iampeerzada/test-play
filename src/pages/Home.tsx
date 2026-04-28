@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Hero } from '../components/Hero';
 import { MovieRow } from '../components/MovieRow';
+import { MovieCard } from '../components/MovieCard';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { HlsVideoPlayer } from '../components/HlsVideoPlayer';
 import { InfoPopup } from '../components/InfoPopup';
@@ -129,15 +130,7 @@ export function Home() {
 
   const categories = Object.keys(categorizedMovies);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#0f1014] text-white flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
-      </div>
-    );
-  }
-
-  const heroMovie = categorizedMovies[Object.keys(categorizedMovies)[0]]?.[0];
+  const heroMovie = categorizedMovies[categories[0]]?.[0];
 
   const handlePlayNext = () => {
     if (!activeMovie) return;
@@ -165,16 +158,49 @@ export function Home() {
       />
       
       <main className="flex-1 pb-16">
-        {heroMovie ? (
+        {isLoading ? (
+          <div className="w-full h-[60vh] flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
+          </div>
+        ) : heroMovie ? (
           <Hero movie={heroMovie} onPlay={setActiveMovie} onInfo={setInfoMovie} />
         ) : (
           <div className="w-full h-[60vh] flex items-center justify-center">
-            <h2 className="text-2xl font-bold text-gray-500">No Movies Available</h2>
+            <h2 className="text-2xl font-bold text-gray-500">No Content Found</h2>
           </div>
         )}
         
-        <div className="relative z-10 flex flex-col gap-4 md:gap-8 pb-12">
-          {Object.entries(categorizedMovies).map(([category, categoryMovies]: [string, Movie[]]) => (
+        {!isLoading && (
+          <div className="relative z-10 flex flex-col gap-4 md:gap-8 pb-12">
+            {searchQuery ? (
+              <div className="px-4 md:px-12 mt-8">
+                <h2 className="text-white text-xl md:text-2xl font-bold mb-6">Search Results</h2>
+                {movies.length === 0 ? (
+                  <div className="text-gray-400 text-lg">No content found for "{searchQuery}"</div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6 mb-8">
+                     {movies.map(movie => {
+                        const fixUrl = (url: string) => {
+                          if (!url) return url;
+                          if (!url.startsWith('http://') && !url.startsWith('https://')) return `${baseUrl.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+                          let newUrl = url;
+                          if (newUrl.includes('192.168.15.206') || newUrl.includes('iptv.ifastx.in')) {
+                              newUrl = newUrl.replace(/http:\/\/[0-9\.]+:[0-9]+/g, baseUrl).replace(/https:\/\/iptv\.ifastx\.in/g, baseUrl).replace(/http:\/\/iptv\.ifastx\.in:[0-9]+/g, baseUrl);
+                          }
+                          if (newUrl.startsWith('http://')) newUrl = newUrl.replace('http://', 'https://');
+                          return newUrl;
+                        };
+                        const cleanedMovie = { ...movie, videoUrl: fixUrl(movie.videoUrl), posterUrl: fixUrl(movie.posterUrl) };
+                        return (
+                           <div key={movie.id} className="w-full">
+                              <MovieCard movie={cleanedMovie} onPlay={setActiveMovie} onInfo={setInfoMovie} />
+                           </div>
+                        );
+                     })}
+                  </div>
+                )}
+              </div>
+            ) : Object.entries(categorizedMovies).map(([category, categoryMovies]: [string, Movie[]]) => (
             <div id={category} key={category} style={{ scrollMarginTop: '80px' }}>
               <MovieRow 
                 title={category} 
@@ -197,6 +223,7 @@ export function Home() {
             </div>
           )}
         </div>
+        )}
       </main>
 
       <footer className="py-8 text-center text-gray-500 text-sm mt-auto border-t border-white/10">

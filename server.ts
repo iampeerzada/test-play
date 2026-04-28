@@ -554,7 +554,7 @@ async function startServer() {
            // Let's just slice the M3U and Custom, and combine.
            const m3uAndCustom = [...filteredCustom, ...visibleM3uMovies];
            const paginatedM3uAndCustom = m3uAndCustom.slice(offset, offset + limit);
-           paginated = [...mongoMovies, ...paginatedM3uAndCustom].slice(0, limit);
+           paginated = [...mongoMovies, ...paginatedM3uAndCustom];
         } else {
            paginated = combinedData.slice(offset, offset + limit);
         }
