@@ -738,7 +738,7 @@ async function startServer() {
   // 7. Report Channel Error
   app.post("/api/report-channel-error", async (req, res) => {
     const { videoId } = req.body;
-    if (videoId && videoId.startsWith('m3u_')) {
+    if (videoId) {
       channelStatusOverrides[videoId] = { hidden: true };
       await saveState();
       console.log(`Channel ${videoId} reported as timeout/error. Hidden from home.`);

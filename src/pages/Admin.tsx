@@ -506,14 +506,12 @@ export function Admin() {
                           </>
                         ) : (
                           <>
-                            {movie.id.startsWith('m3u_') && (
                               <button 
                                 onClick={() => handleToggleChannelStatus(movie.id, !movie.hidden)} 
                                 className={`${movie.hidden ? 'text-green-500 hover:text-green-400' : 'text-yellow-500 hover:text-yellow-400'} font-medium whitespace-nowrap bg-gray-800 px-3 py-1 rounded w-fit mb-1`}
                               >
                                 {movie.hidden ? 'Unhide' : 'Hide'}
                               </button>
-                            )}
                             <button onClick={() => startEditing(movie)} className="text-blue-500 hover:text-blue-400 font-medium whitespace-nowrap bg-gray-800 px-3 py-1 rounded w-fit">Edit Content</button>
                             {!movie.id.startsWith('m3u_') && (
                               <button onClick={() => handleDeleteMovie(movie.id)} className="text-red-500 hover:text-red-400 font-medium whitespace-nowrap bg-gray-800 px-3 py-1 rounded w-fit">Delete Database Entry</button>

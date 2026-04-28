@@ -125,6 +125,8 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ videoId: movie.id })
+                  }).then(() => {
+                     window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                   }).catch(console.error);
                 }
              }}

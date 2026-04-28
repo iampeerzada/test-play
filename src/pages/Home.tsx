@@ -116,6 +116,17 @@ export function Home() {
     return groups;
   }, [movies, baseUrl, searchQuery, activeTab]);
 
+  useEffect(() => {
+    const handleChannelError = (e: CustomEvent) => {
+       const { videoId } = e.detail;
+       setMovies(prev => prev.filter(m => m.id !== videoId));
+    };
+    window.addEventListener('channel-error', handleChannelError as EventListener);
+    return () => {
+       window.removeEventListener('channel-error', handleChannelError as EventListener);
+    };
+  }, []);
+
   const categories = Object.keys(categorizedMovies);
 
   if (isLoading) {

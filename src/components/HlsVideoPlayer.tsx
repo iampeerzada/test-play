@@ -119,19 +119,27 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
                     console.log('Network error detected. CORS or Blocked. Falling back to proxy:', movie.videoUrl);
                     setUseProxy(true);
                     return;
-                 } else {
+                 }
+               }
+               
+               if (useProxy || 
+                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
+                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+                   data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+                   data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
                     hls.destroy();
                     setError("The Live TV stream could not be loaded. It might be offline or returning a Bad Gateway (502) error from the provider.");
                     fetch('/api/report-channel-error', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ videoId: movie.id })
+                    }).then(() => {
+                       window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                     });
                     return;
-                 }
-               }
-               hls.startLoad();
-               break;
+                }
+                hls.startLoad();
+                break;
              case Hls.ErrorTypes.MEDIA_ERROR:
                hls.recoverMediaError();
                break;
@@ -142,6 +150,8 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ videoId: movie.id })
+               }).then(() => {
+                  window.dispatchEvent(new CustomEvent('channel-error', { detail: { videoId: movie.id } }));
                });
                break;
            }
