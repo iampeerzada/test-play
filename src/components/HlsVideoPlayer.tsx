@@ -4,6 +4,8 @@ import Hls from 'hls.js';
 import Plyr from 'plyr';
 import { Movie } from '../data/movies';
 import { cleanStreamUrl } from '../utils/stream';
+import { Capacitor } from '@capacitor/core';
+import { buildApiUrl } from '../utils/api';
 
 interface HlsVideoPlayerProps {
   movie: Movie;
@@ -12,6 +14,7 @@ interface HlsVideoPlayerProps {
 }
 
 export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) {
+  const [useProxy, setUseProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
@@ -23,11 +26,24 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
   }, [onNext]);
 
   const finalUrl = useMemo(() => {
-    // The user explicitly requested to play the direct original URL without proxying ("no edit no mix with m3u URLs")
-    // Note: This may cause mixed content issues if hosted on HTTPS and stream is HTTP,
-    // but we will honor the "direct open actual link" request.
-    return cleanStreamUrl(movie.videoUrl);
-  }, [movie.videoUrl]);
+    const streamUrl = cleanStreamUrl(movie.videoUrl);
+    
+    // If running inside native Android via Capacitor, bypass the proxy completely!
+    // Native apps do not have browser Mixed-Content restrictions.
+    if (Capacitor.isNativePlatform()) {
+       return streamUrl;
+    }
+    
+    // Web browsers enforce "Mixed Content" security policies. They block HTTP streams on HTTPS sites.
+    // Unlike native apps (VLC, MX Player), web apps cannot bypass this browser-level restriction.
+    // Therefore, if the web app is hosted on HTTPS, any HTTP streams MUST be routed via our HTTPS proxy.
+    const mustProxy = typeof window !== 'undefined' && window.location.protocol === 'https:' && streamUrl.startsWith('http://');
+    
+    if (useProxy || mustProxy) {
+      return `/proxy?url=${encodeURIComponent(streamUrl)}`;
+    }
+    return streamUrl;
+  }, [movie.videoUrl, useProxy]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -107,12 +123,22 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
            switch(data.type) {
              case Hls.ErrorTypes.NETWORK_ERROR:
                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
+                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
+                 if (!useProxy) {
+                    console.log('Network error detected. CORS or Blocked. Falling back to proxy:', movie.videoUrl);
+                    setUseProxy(true);
+                    return;
+                 }
+               }
+               
+               if (useProxy || 
+                   data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
                    data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT) {
                     hls.destroy();
                     setError("The Live TV stream could not be loaded. It might be offline or blocked by your browser's Mixed Content settings if using HTTPS.");
-                    fetch('/api/report-channel-error', {
+                    fetch(buildApiUrl('/api/report-channel-error'), {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ videoId: movie.id })
@@ -129,7 +155,7 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
              default:
                hls.destroy();
                setError("The Live TV stream could not be loaded because the channel is currently offline or blocking access.");
-               fetch('/api/report-channel-error', {
+               fetch(buildApiUrl('/api/report-channel-error'), {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ videoId: movie.id })

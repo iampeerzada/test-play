@@ -6,6 +6,7 @@ import bodyParser from "body-parser";
 import { MongoClient, ObjectId } from "mongodb";
 import fs from "fs/promises";
 import { Readable } from "stream";
+import cors from "cors";
 
 interface ServerMovie {
   id: string;
@@ -44,7 +45,7 @@ let movieOverrides: Record<string, Partial<ServerMovie>> = {};
 
 let settings: ServerSettings = {
   categories: ['Action', 'Sci-Fi', 'Web Series', 'Live TV'],
-  baseUrl: 'https://iptv.ifastx.in',
+  baseUrl: 'https://stream.ifastx.in',
   mongoUri: 'mongodb+srv://peerzadaarmaan_db_user:iptv12345678@cluster0.fkklstq.mongodb.net/?appName=Cluster0',
   mongoDbName: 'FileStream',
   mongoCollection: 'file',
@@ -204,7 +205,14 @@ async function loadState() {
     const data = await fs.readFile(STATE_FILE, "utf-8");
     const parsed = JSON.parse(data);
     if (parsed.moviesData) moviesData = parsed.moviesData;
-    if (parsed.settings) settings = { ...settings, ...parsed.settings };
+    if (parsed.settings) {
+       settings = { ...settings, ...parsed.settings };
+       // Enforce hardcoded values so they aren't loaded from a stale state
+       settings.baseUrl = 'https://stream.ifastx.in';
+       settings.mongoUri = 'mongodb+srv://peerzadaarmaan_db_user:iptv12345678@cluster0.fkklstq.mongodb.net/?appName=Cluster0';
+       settings.mongoDbName = 'FileStream';
+       settings.mongoCollection = 'file';
+    }
     if (parsed.movieOverrides) movieOverrides = parsed.movieOverrides;
         // 6. Report channel error
         // 7. Update channel status from admin
@@ -329,6 +337,9 @@ async function startServer() {
 
   const app = express();
   const PORT = 3000;
+
+  // Use CORS to allow requests from the native Android app
+  app.use(cors());
 
   // Use body-parser for incoming webhook payloads
   app.use(bodyParser.json());
@@ -455,6 +466,10 @@ async function startServer() {
        }
        console.error('Proxy error for url:', targetUrl, err.message);
        if (!res.headersSent) {
+          // Add CORS headers so the browser doesn't block the actual 502/504 error message
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Headers', '*');
+          
           if (err.message && err.message.includes('timeout')) {
              res.status(504).send('Proxy Gateway Timeout: ' + err.message);
           } else {
@@ -605,9 +620,8 @@ async function startServer() {
   // 3. Update Settings
   app.post("/api/settings", async (req, res) => {
     console.log("Saving settings payload:", req.body);
-    const { categories, baseUrl, mongoUri, mongoDbName, mongoCollection, m3uPlaylistUrls, m3uSortAZ } = req.body;
+    const { categories, m3uPlaylistUrls, m3uSortAZ } = req.body;
     if (categories) settings.categories = categories;
-    if (typeof baseUrl === 'string') settings.baseUrl = baseUrl;
     if (typeof m3uSortAZ === 'boolean') settings.m3uSortAZ = m3uSortAZ;
     if (typeof m3uPlaylistUrls === 'string') {
        settings.m3uPlaylistUrls = m3uPlaylistUrls;
@@ -615,19 +629,10 @@ async function startServer() {
        lastM3uFetchTime = 0;
     }
     
-    let reconnectNeeded = false;
-    if (typeof mongoUri === 'string' && settings.mongoUri !== mongoUri) reconnectNeeded = true;
+    // We strictly use hardcoded backend configurations for public apps
+    // so we skip applying baseUrl, mongoUri, mongoDbName, mongoCollection from client.
     
-    if (typeof mongoUri === 'string') settings.mongoUri = mongoUri;
-    if (typeof mongoDbName === 'string') settings.mongoDbName = mongoDbName;
-    if (typeof mongoCollection === 'string') settings.mongoCollection = mongoCollection;
-
-    if (reconnectNeeded && mongoClient) {
-      await mongoClient.close();
-      mongoClient = null;
-      mongoLastError = null;
-    }
-
+    // Reconnection is only needed if uri drops or reconnects, but hardcoded means we don't drop here.
     if (!mongoClient && settings.mongoUri) {
       try {
         mongoClient = new MongoClient(settings.mongoUri, { serverSelectionTimeoutMS: 5000 });

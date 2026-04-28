@@ -3,6 +3,7 @@ import { X, AlertCircle } from 'lucide-react';
 import Plyr from 'plyr';
 import { Movie } from '../data/movies';
 import { cleanStreamUrl } from '../utils/stream';
+import { buildApiUrl } from '../utils/api';
 
 interface VideoPlayerProps {
   movie: Movie;
@@ -121,7 +122,7 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
                 console.error("Video element error:", e);
                 setError("The stream could not be loaded. It might be offline or returning a Bad Gateway (502) / Partial Content (206) error from the provider.");
                 if (movie.id) {
-                  fetch('/api/report-channel-error', {
+                  fetch(buildApiUrl('/api/report-channel-error'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ videoId: movie.id })

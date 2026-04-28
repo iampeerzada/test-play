@@ -2,6 +2,8 @@ import { useEffect, useState, FormEvent } from 'react';
 import { Movie } from '../data/movies';
 import { Trash2, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { buildApiUrl } from '../utils/api';
 
 export function Admin() {
   const [categories, setCategories] = useState<string[]>([]);
@@ -12,6 +14,7 @@ export function Admin() {
   const [mongoStatus, setMongoStatus] = useState('');
   const [m3uPlaylistUrls, setM3uPlaylistUrls] = useState('');
   const [m3uSortAZ, setM3uSortAZ] = useState(false);
+  const [nativeBackendUrl, setNativeBackendUrl] = useState(() => localStorage.getItem('native_backend_url') || 'https://ais-pre-czsxixhjbz5ued4kd2yx4i-219951265601.asia-southeast1.run.app');
   
   const [movies, setMovies] = useState<any[]>([]);
   const [editingMovieId, setEditingMovieId] = useState<string | null>(null);
@@ -42,8 +45,8 @@ export function Admin() {
     try {
       setIsLoadingMovies(true);
       const [moviesRes, settingsRes] = await Promise.all([
-        fetch(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home&filterStatus=${filterStatus}`),
-        fetch('/api/settings')
+        fetch(buildApiUrl(`/api/movies?admin=true&page=${page}&limit=50&search=${encodeURIComponent(searchTerm)}&tab=Home&filterStatus=${filterStatus}`)),
+        fetch(buildApiUrl('/api/settings'))
       ]);
       const moviesData = await moviesRes.json();
       const settingsData = await settingsRes.json();
@@ -76,7 +79,7 @@ export function Admin() {
   const handleUpdateSettings = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await fetch('/api/settings', {
+      await fetch(buildApiUrl('/api/settings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ categories, baseUrl, mongoUri, mongoDbName, mongoCollection, m3uPlaylistUrls, m3uSortAZ })
@@ -102,7 +105,7 @@ export function Admin() {
   const handleAddMovie = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/movies', {
+      const response = await fetch(buildApiUrl('/api/movies'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMovie)
@@ -126,7 +129,7 @@ export function Admin() {
   const handleDeleteMovie = async (id: string) => {
     if (confirm('Are you sure you want to delete this movie?')) {
       try {
-        await fetch(`/api/movies/${id}`, { method: 'DELETE' });
+        await fetch(buildApiUrl(`/api/movies/${id}`), { method: 'DELETE' });
         fetchData();
       } catch (e) {
         alert('Failed to delete movie');
@@ -136,7 +139,7 @@ export function Admin() {
 
   const handleToggleChannelStatus = async (id: string, hidden: boolean) => {
     try {
-      await fetch(`/api/admin/channels/${id}`, {
+      await fetch(buildApiUrl(`/api/admin/channels/${id}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hidden })
@@ -174,7 +177,7 @@ export function Admin() {
 
   const handleEditSubmit = async (id: string) => {
     try {
-      await fetch(`/api/movies/${id}`, { 
+      await fetch(buildApiUrl(`/api/movies/${id}`), { 
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
@@ -201,81 +204,67 @@ export function Admin() {
 
         <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
           <h2 className="text-xl font-bold mb-6">Global Settings</h2>
+          
+          {Capacitor.isNativePlatform() && (
+             <div className="mb-6 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
+                <h3 className="text-lg font-bold text-white mb-2">Mobile App Backend Server</h3>
+                <p className="text-sm text-gray-300 mb-4">
+                  When running as a native Android app, you must specify the exact URL where your AI Studio or local server is hosted. 
+                  <strong> To use the app globally, you MUST use a public URL (like the default AI Studio URL or a VPS Public IP), NOT a 192.168.x.x local IP address!</strong>
+                </p>
+                <div className="flex gap-2">
+                   <input 
+                     type="text" 
+                     value={nativeBackendUrl}
+                     onChange={e => setNativeBackendUrl(e.target.value)}
+                     className={`flex-1 bg-gray-900 border ${nativeBackendUrl.includes('192.168.') ? 'border-amber-500' : 'border-gray-700'} rounded-md py-2 px-4 text-white focus:outline-none focus:border-blue-500`}
+                     placeholder="https://ais-pre-...run.app"
+                   />
+                   <button 
+                     type="button" 
+                     onClick={() => {
+                        if (nativeBackendUrl.includes('192.168.') || nativeBackendUrl.includes('localhost') || nativeBackendUrl.includes('127.0.0.1')) {
+                           if (!confirm("WARNING: You entered a LOCAL IP address. Your app will NOT work globally over mobile data or on other Wi-Fi networks. It will only work inside your home. Are you sure you want to save this? If you want it to work globally, use the AI Studio URL or your VPS Public IP.")) {
+                              return;
+                           }
+                        }
+                        localStorage.setItem('native_backend_url', nativeBackendUrl);
+                        alert('Backend URL saved! The app should reload to connect.');
+                        window.location.reload();
+                     }}
+                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
+                   >
+                     Save & Restart
+                   </button>
+                </div>
+                {nativeBackendUrl.includes('192.168.') && (
+                   <p className="text-amber-400 text-xs mt-2 font-bold">⚠️ Warning: 192.168.x.x is a local network IP. It will not work over mobile data!</p>
+                )}
+             </div>
+          )}
+          
           <form onSubmit={handleUpdateSettings} className="space-y-6">
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-400 mb-2">Streaming Base URL</label>
-                <input 
-                  type="text" 
-                  value={baseUrl}
-                  onChange={e => setBaseUrl(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500"
-                  placeholder="e.g. https://iptv.ifastx.in"
-                />
-                <p className="text-xs text-gray-400 mt-1">Base URL for formatting MongoDB streams or overriding links.</p>
-              </div>
-
-              <div className="md:col-span-2 pt-4 border-t border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-bold text-white">Live TV (M3U Playlists)</h3>
-                  <label className="flex items-center gap-2 text-sm text-gray-300">
-                    <input type="checkbox" checked={m3uSortAZ} onChange={e => setM3uSortAZ(e.target.checked)} className="rounded bg-gray-900 border-gray-700" />
-                    Sort Channels A-Z
-                  </label>
-                </div>
-                <p className="text-xs text-gray-400 mb-4">Paste M3U playlist URLs (one per line) or directly paste raw M3U/CSV text to load Live TV channels.</p>
-                <textarea 
-                  value={m3uPlaylistUrls}
-                  onChange={e => setM3uPlaylistUrls(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 h-24 font-mono text-sm"
-                  placeholder="https://example.com/playlist.m3u&#10;Or paste raw CSV with header channel_name,group_title,url,tvg_id,tvg_logo,extinf_raw"
-                />
-              </div>
-
-              <div className="md:col-span-2 pt-4 border-t border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-lg font-bold text-white">MongoDB Auto-Sync</h3>
-                  {mongoStatus && (
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${mongoStatus === 'Connected' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                      Status: {mongoStatus}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-400 mb-4">Provide a connection string to automatically pull stream metadata from a MongoDB collection.</p>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-400 mb-2">MongoDB URI (Connection String)</label>
-                <input 
-                  type="password" 
-                  value={mongoUri}
-                  onChange={e => setMongoUri(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500"
-                  placeholder="mongodb+srv://<user>:<pwd>@cluster.mongodb.net/..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Database Name</label>
-                <input 
-                  type="text" 
-                  value={mongoDbName}
-                  onChange={e => setMongoDbName(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500"
-                  placeholder="FileStream"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Collection Name</label>
-                <input 
-                  type="text" 
-                  value={mongoCollection}
-                  onChange={e => setMongoCollection(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500"
-                  placeholder="file"
-                />
+              <div className="md:col-span-2 border-b border-gray-700 pb-6 mb-4">
+                 <div className="bg-red-900/40 border border-red-500/50 rounded p-4 mb-4">
+                   <p className="text-red-300 text-sm font-medium">Notice: Core streaming configuration (MongoDB URI, Database, Collection, and Base Application URL) has been hardcoded securely on the server side to protect secrets in public deployments. These cannot be modified here.</p>
+                 </div>
+                 
+                 <div className="flex items-center justify-between mb-2 mt-4">
+                   <h3 className="text-lg font-bold text-white">Live TV (M3U Playlists)</h3>
+                   <label className="flex items-center gap-2 text-sm text-gray-300">
+                     <input type="checkbox" checked={m3uSortAZ} onChange={e => setM3uSortAZ(e.target.checked)} className="rounded bg-gray-900 border-gray-700" />
+                     Sort Channels A-Z
+                   </label>
+                 </div>
+                 <p className="text-xs text-gray-400 mb-4">Paste M3U playlist URLs (one per line) or directly paste raw M3U/CSV text to load Live TV channels.</p>
+                 <textarea 
+                   value={m3uPlaylistUrls}
+                   onChange={e => setM3uPlaylistUrls(e.target.value)}
+                   className="w-full bg-gray-900 border border-gray-700 rounded-md py-2 px-4 text-white focus:outline-none focus:border-red-500 h-24 font-mono text-sm"
+                   placeholder="https://example.com/playlist.m3u&#10;Or paste raw CSV with header channel_name,group_title,url,tvg_id,tvg_logo,extinf_raw"
+                 />
               </div>
             </div>
 

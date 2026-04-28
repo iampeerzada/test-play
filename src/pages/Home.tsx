@@ -8,6 +8,7 @@ import { HlsVideoPlayer } from '../components/HlsVideoPlayer';
 import { InfoPopup } from '../components/InfoPopup';
 import { CustomStreamModal } from '../components/CustomStreamModal';
 import { Movie } from '../data/movies';
+import { buildApiUrl } from '../utils/api';
 
 export function Home() {
   const [activeMovie, setActiveMovie] = useState<Movie | null>(null);
@@ -38,8 +39,8 @@ export function Home() {
       
       try {
         const [moviesRes, settingsRes] = await Promise.all([
-          fetch(`/api/movies?page=${page}&limit=50&tab=${encodeURIComponent(activeTab)}&search=${encodeURIComponent(searchQuery)}`),
-          fetch('/api/settings')
+          fetch(buildApiUrl(`/api/movies?page=${page}&limit=50&tab=${encodeURIComponent(activeTab)}&search=${encodeURIComponent(searchQuery)}`)),
+          fetch(buildApiUrl('/api/settings'))
         ]);
         if (!moviesRes.ok || !settingsRes.ok) {
            throw new Error('Failed to fetch data from server');
