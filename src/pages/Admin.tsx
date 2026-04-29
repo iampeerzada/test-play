@@ -27,6 +27,9 @@ export function Admin() {
   const [editingMovieId, setEditingMovieId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Movie>>({});
   
+  const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [editingPlan, setEditingPlan] = useState<any>(null);
+  
   // New category state
   const [newCategory, setNewCategory] = useState('');
   
@@ -250,27 +253,12 @@ export function Admin() {
            <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
              <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">Registered Customers</h2>
-                <button onClick={() => {
-                   const name = prompt('Customer Name:');
-                   if (!name) return;
-                   const phone = prompt('Customer Phone:');
-                   if (!phone) return;
-                   const password = prompt('Customer Password:');
-                   if (!password) return;
-                   
-                   fetch(buildApiUrl('/api/admin/users'), {
-                      method: 'POST',
-                      headers: {'Content-Type': 'application/json'},
-                      body: JSON.stringify({ name, phone, password, role: 'customer', resellerId: user?.role === 'reseller' ? user.id : undefined })
-                   }).then(res => res.json()).then(data => {
-                      if (data.success) {
-                         alert('Customer created!');
-                         fetchData();
-                      } else {
-                         alert(data.error || 'Failed');
-                      }
-                   });
-                }} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Customer</button>
+                <div>
+                   <button onClick={() => setEditingCustomer({ role: 'customer' })} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Customer</button>
+                   {user?.role === 'admin' && (
+                      <button onClick={() => setEditingCustomer({ role: 'reseller' })} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md font-bold text-sm ml-2">Add Reseller</button>
+                   )}
+                </div>
              </div>
              <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -278,6 +266,7 @@ export function Admin() {
                       <tr className="border-b border-gray-700 text-sm text-gray-400">
                          <th className="p-3">Name</th>
                          <th className="p-3">Phone</th>
+                         <th className="p-3">Role / Reseller</th>
                          <th className="p-3">Subscription End</th>
                          <th className="p-3">Joined Date</th>
                          <th className="p-3">Actions</th>
@@ -286,28 +275,23 @@ export function Admin() {
                    <tbody>
                       {customers.map(c => (
                          <tr key={c.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                            <td className="p-3 font-medium">{c.name}</td>
+                            <td className="p-3 font-medium">
+                               {c.name}
+                               {c.networkName && <div className="text-xs text-blue-400">{c.networkName} ({c.city})</div>}
+                            </td>
                             <td className="p-3">{c.phone}</td>
+                            <td className="p-3 text-sm capitalize">{c.role} {c.resellerId ? `(${c.resellerId})` : ''}</td>
                             <td className="p-3">
                                {c.subscriptionEnd ? new Date(c.subscriptionEnd).toLocaleDateString() : 'Inactive'}
                             </td>
                             <td className="p-3">{new Date(c.createdAt).toLocaleDateString()}</td>
                             <td className="p-3">
-                               <button onClick={() => {
-                                  const newPass = prompt('Enter new password for this customer:');
-                                  if (newPass) {
-                                     fetch(buildApiUrl('/api/admin/users'), {
-                                        method: 'POST',
-                                        headers: {'Content-Type': 'application/json'},
-                                        body: JSON.stringify({ id: c.id, password: newPass })
-                                     }).then(() => { alert('Password updated!'); fetchData(); });
-                                  }
-                               }} className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Change Pass</button>
+                               <button onClick={() => setEditingCustomer(c)} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Edit</button>
                             </td>
                          </tr>
                       ))}
                       {customers.length === 0 && (
-                         <tr><td colSpan={5} className="p-4 text-center text-gray-400">No customers found.</td></tr>
+                         <tr><td colSpan={6} className="p-4 text-center text-gray-400">No customers found.</td></tr>
                       )}
                    </tbody>
                 </table>
@@ -317,37 +301,17 @@ export function Admin() {
            <section className="bg-gray-800 p-6 rounded-xl border border-gray-700">
              <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">Subscription Plans</h2>
-                <button onClick={() => {
-                   const name = prompt('Plan Name:');
-                   if (!name) return;
-                   const priceStr = prompt('Price (in ₹):');
-                   if (!priceStr) return;
-                   const durationStr = prompt('Duration (in days):');
-                   if (!durationStr) return;
-                   
-                   fetch(buildApiUrl('/api/admin/plans'), {
-                      method: 'POST',
-                      headers: {'Content-Type': 'application/json'},
-                      body: JSON.stringify({ name, price: parseInt(priceStr), durationDays: parseInt(durationStr), resellerId: user?.role === 'reseller' ? user.id : undefined })
-                   }).then(() => fetchData());
-                }} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Plan</button>
+                <button onClick={() => setEditingPlan({})} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-bold text-sm">Add Plan</button>
              </div>
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                {plans.map(p => (
                   <div key={p.id} className="bg-gray-900 border border-gray-700 rounded-xl p-6">
                      <h3 className="text-xl font-bold mb-2">{p.name}</h3>
-                     <div className="text-3xl font-bold text-red-500 mb-4">₹{p.price}</div>
-                     <p className="text-gray-400 mb-4">{p.durationDays} Days</p>
-                     <button onClick={() => {
-                        const newPrice = prompt('New Price (in ₹):', p.price);
-                        if (newPrice) {
-                           fetch(buildApiUrl('/api/admin/plans'), {
-                              method: 'POST',
-                              headers: {'Content-Type': 'application/json'},
-                              body: JSON.stringify({ id: p.id, price: parseInt(newPrice) })
-                           }).then(() => fetchData());
-                        }
-                     }} className="text-sm bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded w-full">Edit Price</button>
+                     <div className="text-3xl font-bold text-red-500 mb-2">₹{p.price}</div>
+                     <p className="text-gray-400 mb-2">{p.durationDays} Days</p>
+                     {p.description && <p className="text-sm text-gray-400 mb-4 whitespace-pre-wrap">{p.description}</p>}
+                     {p.deviceBind && <div className="text-xs bg-red-900/50 text-red-400 w-fit px-2 py-1 mb-4 rounded font-medium">Device Locked Support</div>}
+                     <button onClick={() => setEditingPlan(p)} className="text-sm bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded w-full mt-2">Edit Plan</button>
                   </div>
                ))}
                {plans.length === 0 && <div className="text-gray-400 col-span-3">No plans created yet.</div>}
@@ -359,9 +323,15 @@ export function Admin() {
              
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
-                 <h3 className="text-gray-400 font-medium mb-2">Total Revenue</h3>
+                 <h3 className="text-gray-400 font-medium mb-2">{user?.role === 'admin' ? 'Total Platform Revenue' : 'Total Revenue'}</h3>
                  <div className="text-3xl font-bold text-green-500">₹{transactions.filter(t => t.status === 'success').reduce((acc, t) => acc + t.amount, 0)}</div>
                </div>
+               {user?.role === 'admin' && (
+                 <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+                   <h3 className="text-gray-400 font-medium mb-2">Direct Revenue (No Reseller)</h3>
+                   <div className="text-3xl font-bold text-blue-500">₹{transactions.filter(t => t.status === 'success' && !t.resellerId).reduce((acc, t) => acc + t.amount, 0)}</div>
+                 </div>
+               )}
                <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
                  <h3 className="text-gray-400 font-medium mb-2">Total Transactions</h3>
                  <div className="text-3xl font-bold">{transactions.filter(t => t.status === 'success').length}</div>
@@ -375,6 +345,7 @@ export function Admin() {
                       <tr className="border-b border-gray-700 text-sm text-gray-400">
                          <th className="p-3">Order ID</th>
                          <th className="p-3">Date</th>
+                         {user?.role === 'admin' && <th className="p-3">Reseller</th>}
                          <th className="p-3">Amount</th>
                          <th className="p-3">Status</th>
                       </tr>
@@ -384,6 +355,9 @@ export function Admin() {
                          <tr key={t.id} className="border-b border-gray-700/50">
                             <td className="p-3 font-mono text-xs">{t.razorpay_order_id || t.id}</td>
                             <td className="p-3">{new Date(t.date).toLocaleString()}</td>
+                            {user?.role === 'admin' && (
+                               <td className="p-3">{t.resellerId ? <span className="text-xs bg-blue-900/40 text-blue-400 px-2 py-1 rounded">{t.resellerId}</span> : <span className="text-gray-500 italic">Direct</span>}</td>
+                            )}
                             <td className="p-3 font-medium text-green-400">₹{t.amount}</td>
                             <td className="p-3">
                                <span className={`px-2 py-1 rounded text-xs font-bold ${t.status === 'success' ? 'bg-green-900/50 text-green-500' : 'bg-red-900/50 text-red-500'}`}>{t.status.toUpperCase()}</span>
@@ -391,7 +365,7 @@ export function Admin() {
                          </tr>
                       ))}
                       {transactions.length === 0 && (
-                         <tr><td colSpan={4} className="p-4 text-center text-gray-400">No transactions recorded.</td></tr>
+                         <tr><td colSpan={user?.role === 'admin' ? 5 : 4} className="p-4 text-center text-gray-400">No transactions recorded.</td></tr>
                       )}
                    </tbody>
                 </table>
@@ -499,7 +473,7 @@ export function Admin() {
               <label className="block text-sm font-medium text-gray-400 mb-2">Industry Visibility</label>
               <p className="text-xs text-gray-500 mb-3">Click on an industry or category to toggle its visibility in the app.</p>
               <div className="flex flex-wrap gap-2">
-                {Array.from(new Set(movies.map(m => m.industry || m.category).filter(Boolean))).sort().map(ind => (
+                {Array.from(new Set(movies.map(m => m.industry || m.category).filter(Boolean) as string[])).sort().map(ind => (
                    <button 
                       key={ind} 
                       type="button"
@@ -753,6 +727,154 @@ export function Admin() {
         </>
         )}
       </div>
+
+      {editingCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-md max-h-[90vh] overflow-y-auto">
+             <h2 className="text-xl font-bold mb-4">{editingCustomer.id ? 'Edit User' : 'Add User'}</h2>
+             <form onSubmit={(e) => {
+               e.preventDefault();
+               const form = e.currentTarget;
+               const data = {
+                 id: editingCustomer.id,
+                 name: (form.elements.namedItem('name') as HTMLInputElement).value,
+                 phone: (form.elements.namedItem('phone') as HTMLInputElement).value,
+                 password: (form.elements.namedItem('password') as HTMLInputElement).value,
+                 role: (form.elements.namedItem('role') as HTMLSelectElement).value,
+                 networkName: (form.elements.namedItem('networkName') as HTMLInputElement).value,
+                 city: (form.elements.namedItem('city') as HTMLInputElement).value,
+                 subscriptionEnd: (form.elements.namedItem('subscriptionEnd') as HTMLInputElement).value ? new Date((form.elements.namedItem('subscriptionEnd') as HTMLInputElement).value).getTime() : undefined,
+                 resellerId: user?.role === 'reseller' ? user.id : undefined
+               };
+               fetch(buildApiUrl('/api/admin/users'), {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(data)
+               }).then(() => {
+                 setEditingCustomer(null);
+                 fetchData();
+               });
+             }} className="space-y-4 text-sm">
+               <div>
+                  <label className="block text-gray-400 mb-1">Name</label>
+                  <input name="name" defaultValue={editingCustomer.name} required className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-1">Phone</label>
+                  <input name="phone" defaultValue={editingCustomer.phone} required className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-1">Password {editingCustomer.id && <span className="text-xs text-gray-500">(leave blank to keep current)</span>}</label>
+                  <input name="password" type="password" required={!editingCustomer.id} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               {user?.role === 'admin' && (
+                 <div>
+                    <label className="block text-gray-400 mb-1">Role</label>
+                    <select name="role" defaultValue={editingCustomer.role || 'customer'} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white">
+                      <option value="customer">Customer</option>
+                      <option value="reseller">Reseller</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                 </div>
+               )}
+               <div className="pt-2 border-t border-gray-700 hidden" id="resellerInfo">
+                 <div>
+                    <label className="block text-gray-400 mb-1">Network Name (ISP)</label>
+                    <input name="networkName" defaultValue={editingCustomer.networkName} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+                 </div>
+                 <div className="mt-4">
+                    <label className="block text-gray-400 mb-1">City</label>
+                    <input name="city" defaultValue={editingCustomer.city} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+                 </div>
+               </div>
+
+               {/* Make reseller fields visible if role is reseller */}
+               <script dangerouslySetInnerHTML={{__html: `
+                 setTimeout(() => {
+                    const roleSelect = document.querySelector('select[name="role"]');
+                    const info = document.getElementById('resellerInfo');
+                    if (roleSelect && info && '${editingCustomer.role}' === 'reseller') {
+                       info.classList.remove('hidden');
+                    }
+                    if (roleSelect && info) {
+                       roleSelect.addEventListener('change', (e) => {
+                          if (e.target.value === 'reseller') info.classList.remove('hidden');
+                          else info.classList.add('hidden');
+                       });
+                    }
+                 }, 0);
+               `}} />
+
+               <div>
+                 <label className="block text-gray-400 mb-1">Subscription End Date</label>
+                 <input name="subscriptionEnd" type="date" defaultValue={editingCustomer.subscriptionEnd ? new Date(editingCustomer.subscriptionEnd).toISOString().split('T')[0] : ''} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+                 <div className="text-xs text-gray-500 mt-1">Leave empty to remove access. To assign a plan/free trial, update the date here manually.</div>
+               </div>
+
+               <div className="flex gap-2 justify-end pt-4">
+                 <button type="button" onClick={() => setEditingCustomer(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">Cancel</button>
+                 <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-bold">Save</button>
+               </div>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {editingPlan && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-md max-h-[90vh] overflow-y-auto">
+             <h2 className="text-xl font-bold mb-4">{editingPlan.id ? 'Edit Plan' : 'Add Plan'}</h2>
+             <form onSubmit={(e) => {
+               e.preventDefault();
+               const form = e.currentTarget;
+               const data = {
+                 id: editingPlan.id,
+                 name: (form.elements.namedItem('name') as HTMLInputElement).value,
+                 description: (form.elements.namedItem('description') as HTMLTextAreaElement).value,
+                 price: parseInt((form.elements.namedItem('price') as HTMLInputElement).value),
+                 durationDays: parseInt((form.elements.namedItem('durationDays') as HTMLInputElement).value),
+                 deviceBind: (form.elements.namedItem('deviceBind') as HTMLInputElement).checked,
+                 resellerId: user?.role === 'reseller' ? user.id : undefined
+               };
+               fetch(buildApiUrl('/api/admin/plans'), {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(data)
+               }).then(() => {
+                 setEditingPlan(null);
+                 fetchData();
+               });
+             }} className="space-y-4 text-sm">
+               <div>
+                  <label className="block text-gray-400 mb-1">Plan Name</label>
+                  <input name="name" defaultValue={editingPlan.name} required className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-1">Description (Optional)</label>
+                  <textarea name="description" defaultValue={editingPlan.description} className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" rows={3}></textarea>
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-1">Price (₹)</label>
+                  <input name="price" type="number" defaultValue={editingPlan.price} required className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-1">Duration (Days)</label>
+                  <input name="durationDays" type="number" defaultValue={editingPlan.durationDays} required className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white" />
+               </div>
+               <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-700">
+                  <input type="checkbox" name="deviceBind" id="deviceBind" defaultChecked={editingPlan.deviceBind} className="w-4 h-4" />
+                  <label htmlFor="deviceBind" className="text-gray-300">Enable Device Locking (MAC/UUID binding)</label>
+               </div>
+
+               <div className="flex gap-2 justify-end pt-4">
+                 <button type="button" onClick={() => setEditingPlan(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">Cancel</button>
+                 <button type="submit" className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-bold">Save</button>
+               </div>
+             </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -16,11 +16,16 @@ export function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
+    let deviceId = localStorage.getItem('ifastx_device_id');
+    if (!deviceId) {
+       deviceId = window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2);
+       localStorage.setItem('ifastx_device_id', deviceId);
+    }
     try {
       const res = await fetch(buildApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password })
+        body: JSON.stringify({ phone, password, deviceId })
       });
       const data = await res.json();
       if (data.success) {

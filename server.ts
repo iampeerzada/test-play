@@ -12,9 +12,11 @@ import crypto from "crypto";
 interface SubscriptionPlan {
   id: string;
   name: string;
+  description?: string;
   price: number;
   durationDays: number;
   resellerId?: string;
+  deviceBind?: boolean;
 }
 
 interface Transaction {
@@ -39,6 +41,9 @@ interface User {
   myList?: string[];
   subscriptionEnd?: number;
   resellerId?: string;
+  networkName?: string;
+  city?: string;
+  lockedDeviceId?: string;
 }
 
 import Razorpay from 'razorpay';
@@ -424,8 +429,8 @@ async function startServer() {
   // API Routes
   
   // Auth endpoints
-  app.post('/api/auth/login', (req, res) => {
-    const { phone, password } = req.body;
+  app.post('/api/auth/login', async (req, res) => {
+    const { phone, password, deviceId } = req.body;
     if (!phone || !password) {
       return res.status(400).json({ error: 'Phone and password are required' });
     }
@@ -433,6 +438,22 @@ async function startServer() {
     const user = usersData.find(u => u.phone === phone && u.passwordHash === hashed);
     
     if (user) {
+       // Optionally implement device locking check here if the user has a plan with deviceBind: true
+       // For now, if the user does not have a lockedDeviceId but requests deviceBind, we could lock it on play.
+       // However, let's lock/check right here.
+       const userPlanIds = transactions.filter(t => t.userId === user.id && t.status === 'success').map(t => t.planId);
+       const activePlans = plans.filter(p => userPlanIds.includes(p.id));
+       const hasBindPlan = activePlans.some(p => p.deviceBind);
+       
+       if (hasBindPlan && deviceId) {
+          if (!user.lockedDeviceId) {
+             user.lockedDeviceId = deviceId;
+             await saveState();
+          } else if (user.lockedDeviceId !== deviceId) {
+             return res.status(403).json({ error: 'Account locked to another device.' });
+          }
+       }
+
        // Return user info minus the hash
        const { passwordHash, ...safeUser } = user;
        res.json({ success: true, user: safeUser });
@@ -478,7 +499,7 @@ async function startServer() {
   });
 
   app.post('/api/admin/users', async (req, res) => {
-     const { id, name, phone, password, role, resellerId, subscriptionEnd } = req.body;
+     const { id, name, phone, password, role, resellerId, subscriptionEnd, networkName, city } = req.body;
      let user = usersData.find(u => u.id === id);
      
      if (user) {
@@ -487,6 +508,8 @@ async function startServer() {
         if (password) user.passwordHash = hashPassword(password);
         if (role) user.role = role;
         if (subscriptionEnd !== undefined) user.subscriptionEnd = subscriptionEnd;
+        if (networkName !== undefined) user.networkName = networkName;
+        if (city !== undefined) user.city = city;
      } else {
         if (!phone || !password || !name) return res.status(400).json({ error: 'Missing fields' });
         if (usersData.find(u => u.phone === phone)) return res.status(409).json({ error: 'Phone exists' });
@@ -499,7 +522,9 @@ async function startServer() {
            role: role || 'customer',
            createdAt: Date.now(),
            resellerId,
-           subscriptionEnd
+           subscriptionEnd,
+           networkName,
+           city
         };
         usersData.push(user);
      }
@@ -549,7 +574,7 @@ async function startServer() {
       const options = {
         amount: plan.price * 100, // Amount is in currency subunits
         currency: "INR",
-        receipt: `receipt_plan_${planId}_user_${userId}`
+        receipt: `rcpt_${Date.now()}`.substring(0, 40)
       };
       
       const order = await razorpay.orders.create(options);
@@ -604,20 +629,24 @@ async function startServer() {
   });
 
   app.post('/api/admin/plans', async (req, res) => {
-    const { id, name, price, durationDays, resellerId } = req.body;
+    const { id, name, description, price, durationDays, resellerId, deviceBind } = req.body;
     let plan = plans.find(p => p.id === id);
     if (plan) {
       if (name) plan.name = name;
+      if (description !== undefined) plan.description = description;
       if (price !== undefined) plan.price = price;
       if (durationDays !== undefined) plan.durationDays = durationDays;
       if (resellerId !== undefined) plan.resellerId = resellerId;
+      if (deviceBind !== undefined) plan.deviceBind = deviceBind;
     } else {
       plan = {
          id: 'p_' + Date.now(),
          name,
+         description,
          price,
          durationDays,
-         resellerId
+         resellerId,
+         deviceBind
       };
       plans.push(plan);
     }
@@ -981,7 +1010,7 @@ async function startServer() {
     // Clear overrides if they exist
     if (deleted && movieOverrides[id]) {
        delete movieOverrides[id];
-       await saveOverrides();
+       await saveState();
     }
     
     if (deleted) {

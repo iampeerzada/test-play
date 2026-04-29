@@ -200,7 +200,7 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
   }, [finalUrl, movie.id]);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col md:items-center md:justify-center w-full h-[100dvh]">
       <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
          <button 
            onClick={onClose}

@@ -1,3 +1,4 @@
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Home } from './pages/Home';
 import { Admin } from './pages/Admin';
@@ -6,7 +7,7 @@ import { Register } from './pages/Register';
 import { Subscription } from './pages/Subscription';
 import { useAuth } from './utils/AuthContext';
 
-function AdminRoute({ children }: { children: JSX.Element }) {
+function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (!user || !['admin', 'reseller'].includes(user.role)) {
      return <Navigate to="/login" replace />;

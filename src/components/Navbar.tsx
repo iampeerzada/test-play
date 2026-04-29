@@ -87,7 +87,7 @@ export function Navbar({ activeTab, onTabChange, onSearch, onCustomStream }: Nav
               className="w-5 h-5 cursor-pointer hover:text-white transition-colors tv-focus rounded" 
               tabIndex={0} 
               onClick={() => setShowSearch(true)}
-              title="Search"
+              aria-label="Search"
             />
           )}
           {onCustomStream && (
@@ -95,7 +95,7 @@ export function Navbar({ activeTab, onTabChange, onSearch, onCustomStream }: Nav
                className="w-5 h-5 cursor-pointer hover:text-white transition-colors tv-focus rounded" 
                tabIndex={0}
                onClick={onCustomStream}
-               title="Play Custom Stream URL"
+               aria-label="Play Custom Stream URL"
             />
           )}
           <Bell className="w-5 h-5 cursor-pointer hover:text-white transition-colors tv-focus rounded hidden sm:block" tabIndex={0} />
