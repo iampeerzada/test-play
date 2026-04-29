@@ -6,6 +6,7 @@ import { cleanStreamUrl } from '../utils/stream';
 import { Capacitor } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { buildApiUrl } from '../utils/api';
+import { attachPlayerInteractions } from '../utils/playerInteraction';
 
 interface VideoPlayerProps {
   movie: Movie;
@@ -15,6 +16,7 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
   const [error, setError] = useState<string | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
   const onNextRef = useRef(onNext);
@@ -73,6 +75,7 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
         ],
         settings: ['quality', 'speed', 'loop'],
         autoplay: true,
+        doubleClick: { togglesFullscreen: false }, // Prevent fullscreen on mobile double-tap
     };
 
     playerRef.current = new Plyr(video, defaultOptions);
@@ -82,8 +85,15 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
       if (onNextRef.current) onNextRef.current();
     });
 
+    // Attach custom double-tap and pinch interactions
+    let cleanupInteractions: () => void | undefined;
+    if (playerRef.current.elements.container) {
+      cleanupInteractions = attachPlayerInteractions(playerRef.current.elements.container, playerRef.current, setIsZoomed);
+    }
+
     return () => {
       // Cleanup
+      if (cleanupInteractions) cleanupInteractions();
       if (playerRef.current) {
         playerRef.current.destroy();
       }
@@ -92,19 +102,19 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col md:items-center md:justify-center w-full h-[100dvh]">
-      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50 flex items-center gap-2 md:gap-4">
          <button 
            onClick={onClose}
-           className="p-2 bg-black/50 hover:bg-red-600 rounded-full text-white transition-colors duration-200 tv-focus group focus:scale-110"
+           className="p-1.5 md:p-2 bg-black/50 hover:bg-red-600 rounded-full text-white transition-colors duration-200 tv-focus group focus:scale-110"
            tabIndex={0}
            autoFocus
          >
-           <X className="w-6 h-6 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
+           <X className="w-5 h-5 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
          </button>
       </div>
 
       {/* Video Container */}
-      <div className="w-full h-full md:max-w-7xl md:h-auto md:aspect-video overflow-hidden shadow-2xl relative bg-black tv-focus">
+      <div className={`w-full h-full md:max-w-7xl md:h-auto md:aspect-video overflow-hidden shadow-2xl relative bg-black tv-focus ${isZoomed ? "zoomed-video-wrapper" : ""}`}>
         {error && (
           <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-zinc-900/95 text-white p-6 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
@@ -131,6 +141,7 @@ export function VideoPlayer({ movie, onClose, onNext }: VideoPlayerProps) {
              playsInline
              controls
              autoPlay
+             preload="auto"
              onError={(e) => {
                 console.error("Video element error:", e);
                 const videoElement = e.target as HTMLVideoElement;

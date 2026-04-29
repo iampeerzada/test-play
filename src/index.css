@@ -45,5 +45,10 @@
     object-fit: contain !important;
     width: 100% !important;
     height: 100% !important;
+    transition: object-fit 0.3s ease-in-out;
+  }
+
+  .zoomed-video-wrapper .plyr video {
+    object-fit: cover !important;
   }
 }

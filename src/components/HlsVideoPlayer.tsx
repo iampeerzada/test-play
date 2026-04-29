@@ -7,6 +7,7 @@ import { cleanStreamUrl } from '../utils/stream';
 import { Capacitor } from '@capacitor/core';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { buildApiUrl } from '../utils/api';
+import { attachPlayerInteractions } from '../utils/playerInteraction';
 
 interface HlsVideoPlayerProps {
   movie: Movie;
@@ -17,6 +18,7 @@ interface HlsVideoPlayerProps {
 export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) {
   const [useProxy, setUseProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -71,6 +73,7 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
     if (!videoRef.current) return;
 
     const video = videoRef.current;
+    let cleanupInteractions: () => void | undefined;
     
     const defaultOptions: Plyr.Options = {
         controls: [
@@ -80,16 +83,14 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
         ],
         settings: ['quality', 'speed', 'loop'],
         autoplay: true,
+        doubleClick: { togglesFullscreen: false }, // Prevent fullscreen on mobile double-tap
     };
 
     if (Hls.isSupported()) {
       const hls = new Hls({
-          enableWorker: false,
-          maxLoadingDelay: 4,
-          minAutoBitrate: 0,
-          lowLatencyMode: true,
-          liveSyncDurationCount: 3,
-          maxBufferLength: 30,
+          enableWorker: true,
+          capLevelToPlayerSize: false,
+          maxBufferLength: 60,
           maxMaxBufferLength: 600,
       });
       hlsRef.current = hls;
@@ -128,12 +129,19 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
         playerRef.current.on('ended', () => {
           if (onNextRef.current) onNextRef.current();
         });
+
+        playerRef.current.on('ready', () => {
+           if (playerRef.current?.elements.container) {
+              cleanupInteractions = attachPlayerInteractions(playerRef.current.elements.container, playerRef.current, setIsZoomed);
+           }
+        });
       });
 
       hls.on(Hls.Events.ERROR, function (event, data) {
          if (data.fatal) {
            switch(data.type) {
              case Hls.ErrorTypes.NETWORK_ERROR:
+
                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR || 
                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
                  if (!useProxy && !Capacitor.isNativePlatform()) {
@@ -187,9 +195,16 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
       playerRef.current.on('ended', () => {
         if (onNextRef.current) onNextRef.current();
       });
+
+      playerRef.current.on('ready', () => {
+         if (playerRef.current?.elements.container) {
+            cleanupInteractions = attachPlayerInteractions(playerRef.current.elements.container, playerRef.current, setIsZoomed);
+         }
+      });
     }
 
     return () => {
+      if (cleanupInteractions) cleanupInteractions();
       if (playerRef.current) {
         playerRef.current.destroy();
       }
@@ -201,17 +216,17 @@ export function HlsVideoPlayer({ movie, onClose, onNext }: HlsVideoPlayerProps) 
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col md:items-center md:justify-center w-full h-[100dvh]">
-      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50">
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50 flex items-center gap-2 md:gap-4">
          <button 
            onClick={onClose}
-           className="p-2 bg-black/50 hover:bg-red-600 rounded-full text-white transition-colors duration-200 tv-focus group focus:scale-110"
+           className="p-1.5 md:p-2 bg-black/50 hover:bg-red-600 rounded-full text-white transition-colors duration-200 tv-focus group focus:scale-110"
            tabIndex={0}
            autoFocus
          >
-           <X className="w-6 h-6 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
+           <X className="w-5 h-5 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
          </button>
       </div>
-      <div className="w-full h-full md:max-w-7xl md:h-auto md:aspect-video overflow-hidden shadow-2xl relative bg-black tv-focus">
+      <div className={`w-full h-full md:max-w-7xl md:h-auto md:aspect-video overflow-hidden shadow-2xl relative bg-black tv-focus ${isZoomed ? "zoomed-video-wrapper" : ""}`}>
         {error && (
           <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-zinc-900/95 text-white p-6 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
